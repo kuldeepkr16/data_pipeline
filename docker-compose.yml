@@ -1,0 +1,54 @@
+version: '3.8'
+
+services:
+  # Source PostgreSQL Database
+  source_pg_db:
+    build:
+      context: ./databases/source_pg_db
+    container_name: source_pg_db
+    ports:
+      - "5434:5432" # Mapped to 5434 to avoid conflict with local Postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: source_db
+    volumes:
+      - ./sql_schema/initial_tables.sql:/docker-entrypoint-initdb.d/99_initial_tables.sql
+    networks:
+      - data_pipeline_net
+
+  # Sink PostgreSQL Database
+  sink_pg_db:
+    build:
+      context: ./databases/sink_pg_db
+    container_name: sink_pg_db
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: sink_db
+    networks:
+      - data_pipeline_net
+
+  # MinIO Object Storage
+  minio:
+    build:
+      context: ./minio
+    container_name: minio_server
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    volumes:
+      - ./minio_data:/data
+    command: server /data --console-address ":9001"
+    networks:
+      - data_pipeline_net
+
+networks:
+  data_pipeline_net:
+    driver: bridge
+
