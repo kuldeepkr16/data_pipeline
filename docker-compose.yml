@@ -51,9 +51,3 @@ services:
 networks:
   data_pipeline_net:
     driver: bridge
-
-
-
-
-
-
