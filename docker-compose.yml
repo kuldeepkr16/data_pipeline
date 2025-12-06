@@ -48,6 +48,44 @@ services:
     networks:
       - data_pipeline_net
 
+  # SQLite Configuration Database
+  config_db:
+    build:
+      context: ./databases/config_db
+    container_name: config_db
+    volumes:
+      - ./databases/config_db/data:/data
+    networks:
+      - data_pipeline_net
+
+  # Backend API (FastAPI)
+  backend:
+    build:
+      context: ./backend
+    container_name: backend_api
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./databases/config_db/data:/data  # Mount the same volume to access config.db
+    networks:
+      - data_pipeline_net
+    depends_on:
+      - config_db
+
+  # Frontend (Next.js)
+  frontend:
+    build:
+      context: ./frontend
+    container_name: frontend_ui
+    ports:
+      - "3000:3000"
+    networks:
+      - data_pipeline_net
+    # In development, we use volumes to sync code changes
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+
 networks:
   data_pipeline_net:
     driver: bridge

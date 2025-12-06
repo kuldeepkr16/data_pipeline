@@ -9,6 +9,8 @@ This project sets up a local data pipeline environment using Docker. It includes
 | **Source DB** | `source_pg_db` | 5434 | Source PostgreSQL database with initial data |
 | **Sink DB** | `sink_pg_db` | 5433 | Sink PostgreSQL database (empty) |
 | **MinIO** | `minio_server` | 9000 (API), 9001 (UI) | S3-compatible object storage |
+| **Config DB** | `config_db` | N/A | SQLite database for pipeline configuration |
+| **Backend API** | `backend_api` | 8000 | FastAPI service to query configuration |
 
 ## Getting Started
 
@@ -61,7 +63,30 @@ PGPASSWORD=write_password psql -h localhost -p 5433 -U write_user -d sink_db
 - **User**: `minioadmin`
 - **Password**: `minioadmin`
 
+### Configuration Service (Backend API)
+The backend API exposes configuration data stored in the SQLite database.
+
+- **Base URL**: `http://localhost:8000`
+- **Get All Configs**:
+  ```bash
+  curl http://localhost:8000/config
+  ```
+- **Get Config for Specific Table**:
+  ```bash
+  curl http://localhost:8000/config/customers
+  ```
+
+### Configuration Database (`config_db`)
+A SQLite database storing table load configurations.
+
+- **Location**: `./databases/config_db/data/config.db`
+- **Connect via terminal**:
+  ```bash
+  sqlite3 databases/config_db/data/config.db "SELECT * FROM table_config;"
+  ```
+
 ## Data Persistence
 - **MinIO**: Data is persisted in the `./minio_data` folder on your host machine.
-- **Databases**: Data is **ephemeral**. The Source DB is automatically re-populated with dummy data (`sql_schema/initial_tables.sql`) every time the container starts. The Sink DB starts empty.
+- **Config DB**: Data is persisted in `./databases/config_db/data/config.db`.
+- **Postgres Databases**: Data is **ephemeral**. The Source DB is automatically re-populated with dummy data (`sql_schema/initial_tables.sql`) every time the container starts. The Sink DB starts empty.
 
