@@ -1,92 +1,56 @@
 # Data Pipeline Project
 
-This project sets up a local data pipeline environment using Docker. It includes two PostgreSQL databases (source and sink) and a MinIO object storage server.
+A complete local data pipeline environment orchestrated with Docker Compose.
 
-## Services
+## 🚀 Quick Start
 
-| Service | Container Name | Port | Description |
-|---------|----------------|------|-------------|
-| **Source DB** | `source_pg_db` | 5434 | Source PostgreSQL database with initial data |
-| **Sink DB** | `sink_pg_db` | 5433 | Sink PostgreSQL database (empty) |
-| **MinIO** | `minio_server` | 9000 (API), 9001 (UI) | S3-compatible object storage |
-| **Config DB** | `config_db` | N/A | SQLite database for pipeline configuration |
-| **Backend API** | `backend_api` | 8000 | FastAPI service to query configuration |
+1. **Clone the repository**
+   ```bash
+   git clone git@github.com:kuldeepkr16/data_pipeline.git
+   cd data_pipeline
+   ```
 
-## Getting Started
+2. **Start the environment**
+   ```bash
+   docker compose up -d --build
+   ```
 
-### Prerequisites
-- Docker Desktop installed and running.
+3. **Stop the environment**
+   ```bash
+   docker compose down
+   ```
 
-### Start the Environment
-Run the following command in the project root to build and start all services:
+## 🖥️ Access Points
 
-```bash
-docker compose up -d --build
-```
+| Service | URL / Port | Description |
+|---------|------------|-------------|
+| **Frontend UI** | [http://localhost:3000](http://localhost:3000) | React/Next.js Configuration Dashboard |
+| **Backend API** | [http://localhost:8000](http://localhost:8000) | FastAPI Service |
+| **MinIO Console** | [http://localhost:9001](http://localhost:9001) | Object Storage UI (User/Pass: `minioadmin`) |
+| **Source DB** | `localhost:5434` | Postgres (Pre-loaded with data) |
+| **Sink DB** | `localhost:5433` | Postgres (Empty) |
 
-### Stop the Environment
-To stop and remove the containers:
+## 🔐 Credentials & Connections
 
-```bash
-docker compose down
-```
+### **PostgreSQL Databases**
 
-## Credentials
-
-### Source Database (`source_pg_db`)
-- **Host**: `localhost`
-- **Port**: `5434`
-- **Database**: `source_db`
-- **Superuser**: `postgres` / `postgres`
-- **Read User**: `read_user` / `read_password`
-
-**Connect via terminal:**
+**Source DB (Port 5434)**
 ```bash
 PGPASSWORD=read_password psql -h localhost -p 5434 -U read_user -d source_db
 ```
 
-### Sink Database (`sink_pg_db`)
-- **Host**: `localhost`
-- **Port**: `5433`
-- **Database**: `sink_db`
-- **Superuser**: `postgres` / `postgres`
-- **Write User**: `write_user` / `write_password`
-
-**Connect via terminal:**
+**Sink DB (Port 5433)**
 ```bash
 PGPASSWORD=write_password psql -h localhost -p 5433 -U write_user -d sink_db
 ```
 
-### MinIO
-- **Console URL**: [http://localhost:9001](http://localhost:9001)
-- **API Endpoint**: `http://localhost:9000`
-- **User**: `minioadmin`
-- **Password**: `minioadmin`
+### **MinIO**
+- **Endpoint**: `http://localhost:9000`
+- **Access Key**: `minioadmin`
+- **Secret Key**: `minioadmin`
 
-### Configuration Service (Backend API)
-The backend API exposes configuration data stored in the SQLite database.
-
-- **Base URL**: `http://localhost:8000`
-- **Get All Configs**:
-  ```bash
-  curl http://localhost:8000/config
-  ```
-- **Get Config for Specific Table**:
-  ```bash
-  curl http://localhost:8000/config/customers
-  ```
-
-### Configuration Database (`config_db`)
-A SQLite database storing table load configurations.
-
-- **Location**: `./databases/config_db/data/config.db`
-- **Connect via terminal**:
-  ```bash
-  sqlite3 databases/config_db/data/config.db "SELECT * FROM table_config;"
-  ```
-
-## Data Persistence
-- **MinIO**: Data is persisted in the `./minio_data` folder on your host machine.
-- **Config DB**: Data is persisted in `./databases/config_db/data/config.db`.
-- **Postgres Databases**: Data is **ephemeral**. The Source DB is automatically re-populated with dummy data (`sql_schema/initial_tables.sql`) every time the container starts. The Sink DB starts empty.
-
+### **Configuration DB (SQLite)**
+To inspect the config database locally:
+```bash
+sqlite3 databases/config_db/data/config.db "SELECT * FROM table_config;"
+```
