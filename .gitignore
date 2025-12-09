@@ -1,3 +1,27 @@
-minio_data/
-.DS_Store
+# Dependencies
+node_modules/
 
+# Next.js build output
+.next/
+out/
+
+# Environment variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# System files
+.DS_Store
+.vscode/
+
+# Project specific - Data Storage
+minio_data/
+databases/config_db/data/
+databases/source_pg_db/data/
+databases/sink_pg_db/data/
+
+# Python
+__pycache__/
+*.pyc
