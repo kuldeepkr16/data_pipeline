@@ -13,7 +13,8 @@ services:
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: source_db
     volumes:
-      - ./sql_schema/initial_tables.sql:/docker-entrypoint-initdb.d/99_initial_tables.sql
+      # Mount tables script with 01_ prefix so it runs BEFORE user creation (99_init.sql)
+      - ./databases/source_pg_db/initial_tables.sql:/docker-entrypoint-initdb.d/01_initial_tables.sql
     networks:
       - data_pipeline_net
 
@@ -85,6 +86,61 @@ services:
     volumes:
       - ./frontend:/app
       - /app/node_modules
+
+  # Postgres to Datalake Loader
+  postgres_loader:
+    build:
+      context: ./data_pipeline_resources/source_to_datalake/postgres_to_datalake
+    container_name: postgres_loader
+    environment:
+      POSTGRES_HOST: source_pg_db
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: source_db
+      POSTGRES_USER: read_user
+      POSTGRES_PASSWORD: read_password
+      MINIO_ENDPOINT: minio_server:9000
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+      MINIO_BUCKET: datalake
+      CONFIG_DB_PATH: /data/config.db
+    volumes:
+      - ./databases/config_db/data:/data  # Mount config DB
+    networks:
+      - data_pipeline_net
+    depends_on:
+      - source_pg_db
+      - minio
+      - config_db
+    # This service doesn't run continuously, it's executed on demand
+    command: tail -f /dev/null  # Keep container running
+
+  # Driver Script for Source to Datalake
+  driver_source_to_datalake:
+    build:
+      context: ./data_pipeline_resources/source_to_datalake/driver_source_to_datalake
+    container_name: driver_source_to_datalake
+    environment:
+      CONFIG_DB_PATH: /data/config.db
+      POSTGRES_HOST: source_pg_db
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: source_db
+      POSTGRES_USER: read_user
+      POSTGRES_PASSWORD: read_password
+      MINIO_ENDPOINT: minio_server:9000
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+      MINIO_BUCKET: datalake
+    volumes:
+      - ./databases/config_db/data:/data  # Mount config DB
+      - ./data_pipeline_resources/source_to_datalake:/loaders  # Mount loaders directory
+    networks:
+      - data_pipeline_net
+    depends_on:
+      - config_db
+      - source_pg_db
+      - minio
+    # This service doesn't run continuously, it's executed on demand
+    command: tail -f /dev/null  # Keep container running
 
 networks:
   data_pipeline_net:

@@ -1,0 +1,316 @@
+#!/usr/bin/env python3
+"""
+Postgres to Datalake Loader
+
+This script:
+1. Reads data from PostgreSQL source database
+2. Handles full and incremental loads
+3. Writes data to MinIO (S3-compatible) object storage
+4. Outputs last_incremental_value for incremental loads
+5. Writes execution status to config database
+"""
+
+import os
+import sys
+import logging
+import sqlite3
+from datetime import datetime
+from typing import Optional
+import psycopg2  # type: ignore
+import pandas as pd  # type: ignore
+from minio import Minio  # type: ignore
+from minio.error import S3Error  # type: ignore
+import io
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+# Configuration from environment variables
+TABLE_NAME = os.getenv('TABLE_NAME')
+LOAD_TYPE = os.getenv('LOAD_TYPE', 'full')
+SOURCE_TYPE = os.getenv('SOURCE_TYPE', 'postgres')
+INCREMENTAL_KEY = os.getenv('INCREMENTAL_KEY')
+LAST_INCREMENTAL_VALUE = os.getenv('LAST_INCREMENTAL_VALUE', '')
+
+# Database connections
+POSTGRES_HOST = os.getenv('POSTGRES_HOST', 'source_pg_db')
+POSTGRES_PORT = os.getenv('POSTGRES_PORT', '5432')
+POSTGRES_DB = os.getenv('POSTGRES_DB', 'source_db')
+POSTGRES_USER = os.getenv('POSTGRES_USER', 'read_user')
+POSTGRES_PASSWORD = os.getenv('POSTGRES_PASSWORD', 'read_password')
+
+# MinIO configuration
+MINIO_ENDPOINT = os.getenv('MINIO_ENDPOINT', 'minio_server:9000')
+MINIO_ACCESS_KEY = os.getenv('MINIO_ACCESS_KEY', 'minioadmin')
+MINIO_SECRET_KEY = os.getenv('MINIO_SECRET_KEY', 'minioadmin')
+MINIO_BUCKET = os.getenv('MINIO_BUCKET', 'datalake')
+MINIO_USE_SSL = os.getenv('MINIO_USE_SSL', 'false').lower() == 'true'
+# Try to resolve hostname to IP to avoid DNS issues
+try:
+    import socket
+    if ':' in MINIO_ENDPOINT:
+        host, port = MINIO_ENDPOINT.split(':')
+        try:
+            ip = socket.gethostbyname(host)
+            MINIO_ENDPOINT = f"{ip}:{port}"
+        except:
+            pass  # Use original if resolution fails
+except:
+    pass
+
+# Config database
+CONFIG_DB_PATH = os.getenv('CONFIG_DB_PATH', '/data/config.db')
+
+
+def get_postgres_connection():
+    """Get PostgreSQL database connection"""
+    try:
+        conn = psycopg2.connect(
+            host=POSTGRES_HOST,
+            port=POSTGRES_PORT,
+            database=POSTGRES_DB,
+            user=POSTGRES_USER,
+            password=POSTGRES_PASSWORD
+        )
+        return conn
+    except psycopg2.Error as e:
+        logger.error(f"Error connecting to PostgreSQL: {e}")
+        raise
+
+
+def get_minio_client():
+    """Get MinIO client"""
+    try:
+        # Remove http:// or https:// prefix if present
+        endpoint = MINIO_ENDPOINT.replace('http://', '').replace('https://', '')
+        
+        client = Minio(
+            endpoint,
+            access_key=MINIO_ACCESS_KEY,
+            secret_key=MINIO_SECRET_KEY,
+            secure=MINIO_USE_SSL
+        )
+        return client
+    except Exception as e:
+        logger.error(f"Error creating MinIO client: {e}")
+        raise
+
+
+def ensure_minio_bucket(client: Minio, bucket_name: str):
+    """Ensure MinIO bucket exists, create if it doesn't"""
+    try:
+        # Try to create bucket, ignore error if it already exists
+        try:
+            client.make_bucket(bucket_name)
+            logger.info(f"Created bucket: {bucket_name}")
+        except S3Error as e:
+            error_code = getattr(e, 'code', '')
+            if error_code in ['BucketAlreadyOwnedByYou', 'BucketAlreadyExists']:
+                logger.info(f"Bucket {bucket_name} already exists")
+            else:
+                # If bucket creation fails, assume it exists and try to use it
+                logger.warning(f"Could not create bucket {bucket_name}, assuming it exists: {e}")
+    except Exception as e:
+        logger.warning(f"Error ensuring bucket exists, will try to proceed: {e}")
+
+
+def build_query(table_name: str, load_type: str, incremental_key: Optional[str], 
+                last_incremental_value: Optional[str]) -> tuple[str, Optional[tuple]]:
+    """Build SQL query based on load type
+    
+    Returns:
+        Tuple of (query: str, params: Optional[tuple])
+    """
+    if load_type == 'full':
+        query = f'SELECT * FROM "{table_name}"'
+        return query, None
+    
+    elif load_type == 'incremental':
+        if not incremental_key:
+            raise ValueError("incremental_key is required for incremental loads")
+        
+        if last_incremental_value:
+            # Query records where incremental_key > last_incremental_value
+            # Using parameterized query for safety
+            query = f'SELECT * FROM "{table_name}" WHERE "{incremental_key}" > %s ORDER BY "{incremental_key}"'
+            return query, (last_incremental_value,)
+        else:
+            # First incremental load - get all records
+            query = f'SELECT * FROM "{table_name}" ORDER BY "{incremental_key}"'
+            return query, None
+    
+    else:
+        raise ValueError(f"Unknown load_type: {load_type}")
+
+
+def get_max_incremental_value(df: pd.DataFrame, incremental_key: str) -> Optional[str]:
+    """Get the maximum value of incremental_key from the dataframe"""
+    if df.empty or incremental_key not in df.columns:
+        return None
+    
+    max_value = df[incremental_key].max()
+    if pd.isna(max_value):
+        return None
+    
+    # Convert to ISO format string if it's a datetime
+    if isinstance(max_value, pd.Timestamp):
+        return max_value.isoformat()
+    elif isinstance(max_value, datetime):
+        return max_value.isoformat()
+    else:
+        return str(max_value)
+
+
+def load_data_to_minio(table_name: str, load_type: str, 
+                       incremental_key: Optional[str], 
+                       last_incremental_value: Optional[str]) -> tuple[bool, Optional[str], Optional[str]]:
+    """Load data from Postgres to MinIO
+    
+    Returns:
+        Tuple of (success: bool, error: Optional[str], max_incremental_value: Optional[str])
+    """
+    pg_conn = None
+    try:
+        # Connect to PostgreSQL
+        logger.info(f"Connecting to PostgreSQL: {POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}")
+        pg_conn = get_postgres_connection()
+        
+        # Build query
+        query, query_params = build_query(table_name, load_type, incremental_key, last_incremental_value)
+        logger.info(f"Executing query: {query}")
+        if query_params:
+            logger.info(f"Query parameters: {query_params}")
+        
+        # Execute query and fetch data
+        df = pd.read_sql_query(query, pg_conn, params=query_params)
+        logger.info(f"Fetched {len(df)} rows from {table_name}")
+        
+        if df.empty:
+            logger.warning(f"No data found for {table_name}")
+            # Still return success, but no incremental value to update
+            return True, None, None
+        
+        # Get max incremental value for incremental loads
+        max_incremental_value = None
+        if load_type == 'incremental' and incremental_key:
+            max_incremental_value = get_max_incremental_value(df, incremental_key)
+            logger.info(f"Max incremental value: {max_incremental_value}")
+        
+        # Connect to MinIO
+        logger.info(f"Connecting to MinIO: {MINIO_ENDPOINT}")
+        minio_client = get_minio_client()
+        
+        # Ensure bucket exists
+        ensure_minio_bucket(minio_client, MINIO_BUCKET)
+        
+        # Generate object key with table_name first, then date-based folder structure: table_name/YYYY/MM/DD/HH/
+        now = datetime.now()
+        date_folder = now.strftime('%Y/%m/%d/%H')
+        timestamp = now.strftime('%Y%m%d_%H%M%S')
+        object_key = f"{table_name}/{date_folder}/{table_name}_{timestamp}.parquet"
+        
+        # Convert DataFrame to Parquet format in memory
+        parquet_buffer = io.BytesIO()
+        df.to_parquet(parquet_buffer, index=False, engine='pyarrow')
+        parquet_buffer.seek(0)
+        
+        # Upload to MinIO
+        logger.info(f"Uploading to MinIO: {MINIO_BUCKET}/{object_key}")
+        minio_client.put_object(
+            MINIO_BUCKET,
+            object_key,
+            parquet_buffer,
+            length=parquet_buffer.getbuffer().nbytes,
+            content_type='application/parquet'
+        )
+        
+        logger.info(f"Successfully uploaded {len(df)} rows to {object_key}")
+        
+        # Close PostgreSQL connection
+        pg_conn.close()
+        
+        return True, None, max_incremental_value
+        
+    except Exception as e:
+        error_msg = f"Error loading data: {str(e)}"
+        logger.error(error_msg, exc_info=True)
+        if pg_conn:
+            pg_conn.close()
+        return False, error_msg, None
+
+
+def write_status_to_config(success: bool, error: Optional[str] = None):
+    """Write execution status to config database"""
+    try:
+        conn = sqlite3.connect(CONFIG_DB_PATH)
+        cursor = conn.cursor()
+        
+        # Check if execution_tracking table exists
+        cursor.execute("""
+            SELECT name FROM sqlite_master 
+            WHERE type='table' AND name='execution_tracking'
+        """)
+        
+        if cursor.fetchone():
+            now = datetime.now().isoformat()
+            status = "success" if success else "failed"
+            
+            cursor.execute("""
+                INSERT OR REPLACE INTO execution_tracking 
+                (table_name, last_run_time, last_status, last_error)
+                VALUES (?, ?, ?, ?)
+            """, (TABLE_NAME, now, status, error))
+            
+            conn.commit()
+            logger.info(f"Wrote status to config: {status}")
+        else:
+            logger.warning("execution_tracking table does not exist, skipping status write")
+        
+        conn.close()
+        
+    except Exception as e:
+        logger.warning(f"Failed to write status to config: {e}")
+
+
+def main():
+    """Main function"""
+    if not TABLE_NAME:
+        logger.error("TABLE_NAME environment variable is required")
+        sys.exit(1)
+    
+    logger.info(f"Starting Postgres to Datalake loader for table: {TABLE_NAME}")
+    logger.info(f"Load type: {LOAD_TYPE}")
+    
+    if LOAD_TYPE == 'incremental':
+        logger.info(f"Incremental key: {INCREMENTAL_KEY}")
+        logger.info(f"Last incremental value: {LAST_INCREMENTAL_VALUE or 'None (first run)'}")
+    
+    # Load data
+    success, error, max_incremental_value = load_data_to_minio(
+        TABLE_NAME,
+        LOAD_TYPE,
+        INCREMENTAL_KEY if INCREMENTAL_KEY else None,
+        LAST_INCREMENTAL_VALUE if LAST_INCREMENTAL_VALUE else None
+    )
+    
+    # Write status to config
+    write_status_to_config(success, error)
+    
+    # Output last_incremental_value for incremental loads on success
+    if success and LOAD_TYPE == 'incremental' and max_incremental_value:
+        print(f"LAST_INCREMENTAL_VALUE={max_incremental_value}", file=sys.stdout)
+        logger.info(f"Output last_incremental_value: {max_incremental_value}")
+    
+    if not success:
+        logger.error(f"Load failed: {error}")
+        sys.exit(1)
+    
+    logger.info("Load completed successfully")
+
+
+if __name__ == "__main__":
+    main()
