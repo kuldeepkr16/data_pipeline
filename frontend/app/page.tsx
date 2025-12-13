@@ -7,6 +7,11 @@ interface Config {
   schedule_in_mins: number;
   load_type: string;
   is_active: number;
+  source_type: string | null;
+  incremental_key: string | null;
+  last_incremental_value: string | null;
+  last_loader_run_timestamp: string | null;
+  last_loader_run_status: string | null;
 }
 
 export default function Home() {
@@ -138,15 +143,7 @@ export default function Home() {
           )}
 
           {!loading && !error && (
-            <div className="w-full bg-gray-900/40 border border-white/5 rounded-xl overflow-hidden backdrop-blur-sm">
-              <div className="grid grid-cols-12 gap-4 p-4 border-b border-white/10 bg-black/20 text-xs font-bold text-gray-500 uppercase tracking-widest">
-                <div className="col-span-3">Table Name</div>
-                <div className="col-span-2 text-center">Status</div>
-                <div className="col-span-2 text-center">Schedule</div>
-                <div className="col-span-3 text-center">Load Type</div>
-                <div className="col-span-2 text-right">Actions</div>
-              </div>
-
+            <div className="w-full space-y-4">
               {configs.map((config) => {
                 const isEditing = editingId === config.table_name;
                 const current = isEditing ? tempConfig! : config;
@@ -154,100 +151,170 @@ export default function Home() {
                 return (
                   <div 
                     key={config.table_name} 
-                    className={`grid grid-cols-12 gap-4 p-4 items-center border-b border-white/5 hover:bg-white/5 transition-colors ${isEditing ? 'bg-indigo-900/20 border-indigo-500/30' : ''}`}
+                    className={`bg-gray-900/40 border rounded-xl overflow-hidden backdrop-blur-sm transition-all ${
+                      isEditing ? 'border-indigo-500/50 bg-indigo-900/20' : 'border-white/5 hover:border-white/10'
+                    }`}
                   >
-                    {/* Table Name */}
-                    <div className="col-span-3 font-medium text-white capitalize">
-                      {config.table_name}
-                    </div>
-
-                    {/* Status */}
-                    <div className="col-span-2 text-center">
-                      {isEditing ? (
-                         <button
-                           onClick={() => handleInputChange('is_active', current.is_active ? 0 : 1)}
-                           className={`px-2 py-1 rounded text-xs font-bold w-20 ${
-                             current.is_active 
-                               ? 'bg-green-500/20 text-green-400 border border-green-500/30' 
-                               : 'bg-red-500/20 text-red-400 border border-red-500/30'
-                           }`}
-                         >
-                           {current.is_active ? 'ACTIVE' : 'INACTIVE'}
-                         </button>
-                      ) : (
-                        <span className={`inline-block px-2 py-1 rounded text-xs font-bold w-20 ${
-                          config.is_active 
-                            ? 'bg-green-500/10 text-green-400 border border-green-500/20' 
-                            : 'bg-red-500/10 text-red-400 border border-red-500/20'
-                        }`}>
-                          {config.is_active ? 'ACTIVE' : 'INACTIVE'}
+                    {/* Header Row */}
+                    <div className="flex items-center justify-between p-4 border-b border-white/5">
+                      <div className="flex items-center space-x-4">
+                        {/* Table Name */}
+                        <div className="flex items-center space-x-3">
+                          <div className={`w-3 h-3 rounded-full ${config.is_active ? 'bg-green-500' : 'bg-red-500'}`}></div>
+                          <h3 className="text-lg font-semibold text-white capitalize">{config.table_name}</h3>
+                        </div>
+                        
+                        {/* Source Type Badge */}
+                        <span className="px-2 py-0.5 rounded bg-purple-500/20 text-purple-400 text-xs font-medium border border-purple-500/30">
+                          {config.source_type || 'postgres'}
                         </span>
-                      )}
-                    </div>
-
-                    {/* Schedule */}
-                    <div className="col-span-2 text-center font-mono text-gray-300">
-                      {isEditing ? (
-                        <input
-                          type="number"
-                          value={current.schedule_in_mins}
-                          onChange={(e) => handleInputChange('schedule_in_mins', parseInt(e.target.value))}
-                          className="w-16 bg-black/50 border border-indigo-500/50 rounded px-2 py-1 text-center focus:outline-none focus:border-indigo-400"
-                        />
-                      ) : (
-                        <span>{config.schedule_in_mins}m</span>
-                      )}
-                    </div>
-
-                    {/* Load Type */}
-                    <div className="col-span-3 text-center">
-                      {isEditing ? (
-                        <select
-                          value={current.load_type}
-                          onChange={(e) => handleInputChange('load_type', e.target.value)}
-                          className="bg-black/50 border border-indigo-500/50 rounded px-2 py-1 text-sm text-gray-300 focus:outline-none focus:border-indigo-400"
-                        >
-                          <option value="full">Full Load</option>
-                          <option value="incremental">Incremental</option>
-                        </select>
-                      ) : (
-                        <span className="inline-block px-2 py-1 rounded bg-white/5 text-gray-400 text-xs">
+                        
+                        {/* Load Type Badge */}
+                        <span className={`px-2 py-0.5 rounded text-xs font-medium border ${
+                          config.load_type === 'incremental' 
+                            ? 'bg-blue-500/20 text-blue-400 border-blue-500/30' 
+                            : 'bg-amber-500/20 text-amber-400 border-amber-500/30'
+                        }`}>
                           {config.load_type}
                         </span>
-                      )}
+                      </div>
+
+                      {/* Actions */}
+                      <div className="flex items-center space-x-2">
+                        {isEditing ? (
+                          <>
+                            <button 
+                              onClick={handleSave}
+                              className="px-3 py-1.5 bg-green-600 hover:bg-green-500 text-white rounded text-sm font-medium transition-colors flex items-center space-x-1"
+                            >
+                              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                              </svg>
+                              <span>Save</span>
+                            </button>
+                            <button 
+                              onClick={handleCancel}
+                              className="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-white rounded text-sm font-medium transition-colors"
+                            >
+                              Cancel
+                            </button>
+                          </>
+                        ) : (
+                          <button 
+                            onClick={() => handleEdit(config)}
+                            className="px-3 py-1.5 bg-indigo-600/20 hover:bg-indigo-600 text-indigo-400 hover:text-white border border-indigo-500/30 hover:border-indigo-500 rounded text-sm font-medium transition-all"
+                          >
+                            Edit
+                          </button>
+                        )}
+                      </div>
                     </div>
 
-                    {/* Actions */}
-                    <div className="col-span-2 flex justify-end space-x-2">
-                      {isEditing ? (
-                        <>
-                          <button 
-                            onClick={handleSave}
-                            className="p-1.5 bg-green-600 hover:bg-green-500 text-white rounded transition-colors"
-                            title="Save"
+                    {/* Details Grid */}
+                    <div className="p-4 grid grid-cols-2 md:grid-cols-4 gap-4">
+                      {/* Status */}
+                      <div className="space-y-1">
+                        <label className="text-xs text-gray-500 uppercase tracking-wider">Status</label>
+                        {isEditing ? (
+                          <button
+                            onClick={() => handleInputChange('is_active', current.is_active ? 0 : 1)}
+                            className={`px-3 py-1.5 rounded text-sm font-bold w-full ${
+                              current.is_active 
+                                ? 'bg-green-500/20 text-green-400 border border-green-500/30' 
+                                : 'bg-red-500/20 text-red-400 border border-red-500/30'
+                            }`}
                           >
-                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                            </svg>
+                            {current.is_active ? 'ACTIVE' : 'INACTIVE'}
                           </button>
-                          <button 
-                            onClick={handleCancel}
-                            className="p-1.5 bg-gray-700 hover:bg-gray-600 text-white rounded transition-colors"
-                            title="Cancel"
+                        ) : (
+                          <div className={`px-3 py-1.5 rounded text-sm font-bold text-center ${
+                            config.is_active 
+                              ? 'bg-green-500/10 text-green-400 border border-green-500/20' 
+                              : 'bg-red-500/10 text-red-400 border border-red-500/20'
+                          }`}>
+                            {config.is_active ? 'ACTIVE' : 'INACTIVE'}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Schedule */}
+                      <div className="space-y-1">
+                        <label className="text-xs text-gray-500 uppercase tracking-wider">Schedule</label>
+                        {isEditing ? (
+                          <input
+                            type="number"
+                            value={current.schedule_in_mins}
+                            onChange={(e) => handleInputChange('schedule_in_mins', parseInt(e.target.value))}
+                            className="w-full bg-black/50 border border-indigo-500/50 rounded px-3 py-1.5 text-center font-mono text-white focus:outline-none focus:border-indigo-400"
+                          />
+                        ) : (
+                          <div className="px-3 py-1.5 rounded bg-white/5 text-gray-300 font-mono text-center">
+                            {config.schedule_in_mins} mins
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Load Type */}
+                      <div className="space-y-1">
+                        <label className="text-xs text-gray-500 uppercase tracking-wider">Load Type</label>
+                        {isEditing ? (
+                          <select
+                            value={current.load_type}
+                            onChange={(e) => handleInputChange('load_type', e.target.value)}
+                            className="w-full bg-black/50 border border-indigo-500/50 rounded px-3 py-1.5 text-gray-300 focus:outline-none focus:border-indigo-400"
                           >
-                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                            </svg>
-                          </button>
-                        </>
-                      ) : (
-                        <button 
-                          onClick={() => handleEdit(config)}
-                          className="p-1.5 bg-indigo-600/20 hover:bg-indigo-600 text-indigo-400 hover:text-white border border-indigo-500/30 hover:border-indigo-500 rounded transition-all"
-                        >
-                          Edit
-                        </button>
-                      )}
+                            <option value="full">Full Load</option>
+                            <option value="incremental">Incremental</option>
+                          </select>
+                        ) : (
+                          <div className="px-3 py-1.5 rounded bg-white/5 text-gray-300 text-center capitalize">
+                            {config.load_type}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Incremental Key */}
+                      <div className="space-y-1">
+                        <label className="text-xs text-gray-500 uppercase tracking-wider">Incremental Key</label>
+                        <div className="px-3 py-1.5 rounded bg-white/5 text-gray-300 font-mono text-center text-sm">
+                          {config.incremental_key || '-'}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Run Status Row */}
+                    <div className="px-4 pb-4 grid grid-cols-1 md:grid-cols-3 gap-4">
+                      {/* Last Incremental Value */}
+                      <div className="space-y-1">
+                        <label className="text-xs text-gray-500 uppercase tracking-wider">Last Incremental Value</label>
+                        <div className="px-3 py-2 rounded bg-black/30 border border-white/5 text-gray-400 font-mono text-xs">
+                          {config.last_incremental_value || 'N/A'}
+                        </div>
+                      </div>
+
+                      {/* Last Run Timestamp */}
+                      <div className="space-y-1">
+                        <label className="text-xs text-gray-500 uppercase tracking-wider">Last Run</label>
+                        <div className="px-3 py-2 rounded bg-black/30 border border-white/5 text-gray-400 font-mono text-xs">
+                          {config.last_loader_run_timestamp 
+                            ? new Date(config.last_loader_run_timestamp).toLocaleString() 
+                            : 'Never'}
+                        </div>
+                      </div>
+
+                      {/* Last Run Status */}
+                      <div className="space-y-1">
+                        <label className="text-xs text-gray-500 uppercase tracking-wider">Last Run Status</label>
+                        <div className={`px-3 py-2 rounded border text-xs font-medium text-center uppercase ${
+                          config.last_loader_run_status === 'success'
+                            ? 'bg-green-500/10 text-green-400 border-green-500/20'
+                            : config.last_loader_run_status === 'failed'
+                            ? 'bg-red-500/10 text-red-400 border-red-500/20'
+                            : 'bg-gray-500/10 text-gray-400 border-gray-500/20'
+                        }`}>
+                          {config.last_loader_run_status || 'N/A'}
+                        </div>
+                      </div>
                     </div>
                   </div>
                 );
