@@ -8,13 +8,13 @@ CREATE TABLE IF NOT EXISTS table_config (
     incremental_key TEXT,
     last_incremental_value TIMESTAMP,
     last_loader_run_timestamp TIMESTAMP,
-    last_loader_run_status TEXT
+    last_loader_run_status TEXT,
+    sink_type TEXT DEFAULT 'postgres',
+    last_sink_run_timestamp TIMESTAMP,
+    last_sink_status TEXT
 );
 
 -- Insert dummy data
--- customers: full load (dimension table), no incremental fields needed
--- orders: incremental load using order_date as the incremental key
-INSERT OR IGNORE INTO table_config (table_name, schedule_in_mins, load_type, is_active, source_type, incremental_key, last_incremental_value) VALUES
-('customers', 60, 'full', 1, 'postgres', NULL, NULL),
-('orders', 30, 'incremental', 1, 'postgres', 'order_date', NULL);
-
+INSERT OR IGNORE INTO table_config (table_name, schedule_in_mins, load_type, is_active, source_type, incremental_key, last_incremental_value, sink_type) VALUES
+('customers', 60, 'full', 1, 'postgres', NULL, NULL, 'postgres'),
+('orders', 30, 'incremental', 1, 'postgres', 'order_date', NULL, 'postgres');
