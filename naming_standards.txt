@@ -1,0 +1,60 @@
+1. all the temp variables should start with temp_
+2. all the source table and source resources should start with source_
+3. all the datalake table and datalake resources should start with dl_
+4. all the sink table and sink resources should start with sink_
+5. any dependencies should be installed using requirements.txt
+
+example: source
+source_tablename
+source_to_dl_schedule
+source_to_dl_load_type
+source_to_dl_is_active
+source_type
+source_to_dl_incremental_key
+source_to_dl_last_incremental_value
+source_to_dl_last_loader_run_timestamp
+source_to_dl_last_loader_run_status
+
+6. all minio/s3 path should start with dl_
+
+example: dl_
+
+source_to_dl/dl_tablename/yyyy/mm/dd/hh/tablename_yyyymmdd_hhmmss.parquet
+source_to_dl/failed_events/dl_tablename/yyyy/mm/dd/hh/tablename_yyyymmdd_hhmmss.parquet
+
+example: sink_
+
+sink_tablename
+dl_to_sink_schedule
+dl_to_sink_load_type
+dl_to_sink_is_active
+sink_type
+dl_to_sink_incremental_key = feild name of file created at minio/s3
+dl_to_sink_last_incremental_value = actual value of incremental key
+dl_to_sink_last_loader_run_timestamp
+dl_to_sink_last_loader_run_status
+
+7. folder structure:
+
+databases
+    config_db/init.sql
+    init.sql should contain pipeline_config, pipeline_run_logs
+
+frontend
+    next.js
+
+backend
+    fastapi
+    
+data_pipeline_resources
+    source_to_dl/driver_source_to_dl/
+    source_to_dl/different_db_to_dl/
+       (example: source_to_dl/postgres_to_dl/,source_to_dl/sheets_to_dl/,source_to_dl/dynamodb_to_dl/)
+
+    dl_to_sink/driver_dl_to_sink/
+    dl_to_sink/dl_to_different_sink/
+       (example: dl_to_sink/dl_to_sink_name(posgress,redshift)/)
+
+datalake
+    minio_resources or s3_resources
+    minio_resources/data
