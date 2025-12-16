@@ -3,10 +3,14 @@
 import { useState, useEffect } from 'react';
 
 interface Config {
-  table_name: string;
-  schedule_in_mins: number;
-  load_type: string;
-  is_active: number;
+  source_tablename: string;
+  source_to_dl_schedule: number;
+  source_to_dl_load_type: string;
+  source_to_dl_is_active: number;
+  // Sink config (optional for now in UI, but available)
+  dl_to_sink_schedule?: number;
+  dl_to_sink_load_type?: string;
+  dl_to_sink_is_active?: number;
 }
 
 export default function Home() {
@@ -15,9 +19,9 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [tempConfig, setTempConfig] = useState<Config | null>(null);
-  
+
   // Notification State
-  const [notification, setNotification] = useState<{message: string, type: 'success' | 'error'} | null>(null);
+  const [notification, setNotification] = useState<{ message: string, type: 'success' | 'error' } | null>(null);
 
   useEffect(() => {
     fetchData();
@@ -46,7 +50,7 @@ export default function Home() {
   };
 
   const handleEdit = (config: Config) => {
-    setEditingId(config.table_name);
+    setEditingId(config.source_tablename);
     setTempConfig({ ...config });
   };
 
@@ -65,7 +69,7 @@ export default function Home() {
     if (!tempConfig) return;
 
     try {
-      const res = await fetch(`http://localhost:8000/config/${tempConfig.table_name}`, {
+      const res = await fetch(`http://localhost:8000/config/${tempConfig.source_tablename}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -74,12 +78,12 @@ export default function Home() {
       });
 
       if (!res.ok) throw new Error('Failed to update config');
-      
+
       // Update local state
-      setConfigs(prev => prev.map(c => c.table_name === tempConfig.table_name ? tempConfig : c));
+      setConfigs(prev => prev.map(c => c.source_tablename === tempConfig.source_tablename ? tempConfig : c));
       setEditingId(null);
       setTempConfig(null);
-      
+
       // Show success banner
       setNotification({ message: 'Configuration saved successfully!', type: 'success' });
     } catch (err) {
@@ -140,47 +144,45 @@ export default function Home() {
           {!loading && !error && (
             <div className="w-full bg-gray-900/40 border border-white/5 rounded-xl overflow-hidden backdrop-blur-sm">
               <div className="grid grid-cols-12 gap-4 p-4 border-b border-white/10 bg-black/20 text-xs font-bold text-gray-500 uppercase tracking-widest">
-                <div className="col-span-3">Table Name</div>
-                <div className="col-span-2 text-center">Status</div>
+                <div className="col-span-3">Source Table</div>
+                <div className="col-span-2 text-center">Source Status</div>
                 <div className="col-span-2 text-center">Schedule</div>
                 <div className="col-span-3 text-center">Load Type</div>
                 <div className="col-span-2 text-right">Actions</div>
               </div>
 
               {configs.map((config) => {
-                const isEditing = editingId === config.table_name;
+                const isEditing = editingId === config.source_tablename;
                 const current = isEditing ? tempConfig! : config;
 
                 return (
-                  <div 
-                    key={config.table_name} 
+                  <div
+                    key={config.source_tablename}
                     className={`grid grid-cols-12 gap-4 p-4 items-center border-b border-white/5 hover:bg-white/5 transition-colors ${isEditing ? 'bg-indigo-900/20 border-indigo-500/30' : ''}`}
                   >
                     {/* Table Name */}
                     <div className="col-span-3 font-medium text-white capitalize">
-                      {config.table_name}
+                      {config.source_tablename}
                     </div>
 
                     {/* Status */}
                     <div className="col-span-2 text-center">
                       {isEditing ? (
-                         <button
-                           onClick={() => handleInputChange('is_active', current.is_active ? 0 : 1)}
-                           className={`px-2 py-1 rounded text-xs font-bold w-20 ${
-                             current.is_active 
-                               ? 'bg-green-500/20 text-green-400 border border-green-500/30' 
-                               : 'bg-red-500/20 text-red-400 border border-red-500/30'
-                           }`}
-                         >
-                           {current.is_active ? 'ACTIVE' : 'INACTIVE'}
-                         </button>
+                        <button
+                          onClick={() => handleInputChange('source_to_dl_is_active', current.source_to_dl_is_active ? 0 : 1)}
+                          className={`px-2 py-1 rounded text-xs font-bold w-20 ${current.source_to_dl_is_active
+                              ? 'bg-green-500/20 text-green-400 border border-green-500/30'
+                              : 'bg-red-500/20 text-red-400 border border-red-500/30'
+                            }`}
+                        >
+                          {current.source_to_dl_is_active ? 'ACTIVE' : 'INACTIVE'}
+                        </button>
                       ) : (
-                        <span className={`inline-block px-2 py-1 rounded text-xs font-bold w-20 ${
-                          config.is_active 
-                            ? 'bg-green-500/10 text-green-400 border border-green-500/20' 
+                        <span className={`inline-block px-2 py-1 rounded text-xs font-bold w-20 ${config.source_to_dl_is_active
+                            ? 'bg-green-500/10 text-green-400 border border-green-500/20'
                             : 'bg-red-500/10 text-red-400 border border-red-500/20'
-                        }`}>
-                          {config.is_active ? 'ACTIVE' : 'INACTIVE'}
+                          }`}>
+                          {config.source_to_dl_is_active ? 'ACTIVE' : 'INACTIVE'}
                         </span>
                       )}
                     </div>
@@ -190,12 +192,12 @@ export default function Home() {
                       {isEditing ? (
                         <input
                           type="number"
-                          value={current.schedule_in_mins}
-                          onChange={(e) => handleInputChange('schedule_in_mins', parseInt(e.target.value))}
+                          value={current.source_to_dl_schedule}
+                          onChange={(e) => handleInputChange('source_to_dl_schedule', parseInt(e.target.value))}
                           className="w-16 bg-black/50 border border-indigo-500/50 rounded px-2 py-1 text-center focus:outline-none focus:border-indigo-400"
                         />
                       ) : (
-                        <span>{config.schedule_in_mins}m</span>
+                        <span>{config.source_to_dl_schedule}m</span>
                       )}
                     </div>
 
@@ -203,8 +205,8 @@ export default function Home() {
                     <div className="col-span-3 text-center">
                       {isEditing ? (
                         <select
-                          value={current.load_type}
-                          onChange={(e) => handleInputChange('load_type', e.target.value)}
+                          value={current.source_to_dl_load_type}
+                          onChange={(e) => handleInputChange('source_to_dl_load_type', e.target.value)}
                           className="bg-black/50 border border-indigo-500/50 rounded px-2 py-1 text-sm text-gray-300 focus:outline-none focus:border-indigo-400"
                         >
                           <option value="full">Full Load</option>
@@ -212,7 +214,7 @@ export default function Home() {
                         </select>
                       ) : (
                         <span className="inline-block px-2 py-1 rounded bg-white/5 text-gray-400 text-xs">
-                          {config.load_type}
+                          {config.source_to_dl_load_type}
                         </span>
                       )}
                     </div>
@@ -221,7 +223,7 @@ export default function Home() {
                     <div className="col-span-2 flex justify-end space-x-2">
                       {isEditing ? (
                         <>
-                          <button 
+                          <button
                             onClick={handleSave}
                             className="p-1.5 bg-green-600 hover:bg-green-500 text-white rounded transition-colors"
                             title="Save"
@@ -230,7 +232,7 @@ export default function Home() {
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                             </svg>
                           </button>
-                          <button 
+                          <button
                             onClick={handleCancel}
                             className="p-1.5 bg-gray-700 hover:bg-gray-600 text-white rounded transition-colors"
                             title="Cancel"
@@ -241,7 +243,7 @@ export default function Home() {
                           </button>
                         </>
                       ) : (
-                        <button 
+                        <button
                           onClick={() => handleEdit(config)}
                           className="p-1.5 bg-indigo-600/20 hover:bg-indigo-600 text-indigo-400 hover:text-white border border-indigo-500/30 hover:border-indigo-500 rounded transition-all"
                         >
@@ -268,11 +270,10 @@ export default function Home() {
 
       {/* Notification Banner */}
       {notification && (
-        <div className={`fixed bottom-0 left-0 w-full p-4 text-center font-medium transform transition-transform duration-300 ease-in-out z-50 ${
-          notification.type === 'success' 
-            ? 'bg-green-600/90 text-white backdrop-blur-md border-t border-green-400' 
+        <div className={`fixed bottom-0 left-0 w-full p-4 text-center font-medium transform transition-transform duration-300 ease-in-out z-50 ${notification.type === 'success'
+            ? 'bg-green-600/90 text-white backdrop-blur-md border-t border-green-400'
             : 'bg-red-600/90 text-white backdrop-blur-md border-t border-red-400'
-        }`}>
+          }`}>
           <div className="flex justify-center items-center space-x-2">
             {notification.type === 'success' ? (
               <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
