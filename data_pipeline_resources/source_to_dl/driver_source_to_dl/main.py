@@ -4,7 +4,10 @@ import time
 import logging
 import subprocess
 import sys
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+
+# IST timezone (UTC+5:30)
+IST = timezone(timedelta(hours=5, minutes=30))
 from typing import List, Dict, Any, Optional
 
 # Setup logging
@@ -51,7 +54,7 @@ def should_run_now(config: Dict[str, Any]) -> bool:
     try:
         last_run = datetime.fromisoformat(last_run_str)
         next_run = last_run + timedelta(minutes=schedule_mins)
-        if datetime.now() >= next_run:
+        if datetime.now(IST) >= next_run:
             logger.info(f"Table {source_tablename} is due to run (last run: {last_run}, schedule: {schedule_mins}m)")
             return True
     except ValueError:
@@ -60,10 +63,10 @@ def should_run_now(config: Dict[str, Any]) -> bool:
     
     return False
 
-def trigger_loader(config: Dict[str, Any]) -> str:
+def trigger_loader(config: Dict[str, Any]) -> tuple:
     """
     Triggers the appropriate loader script based on source_type.
-    Returns: 'success' | 'failed'
+    Returns: (status, new_incremental_value, error_message, rows_processed, file_path)
     """
     source_tablename = config['source_tablename']
     source_type = config['source_type']
@@ -79,8 +82,9 @@ def trigger_loader(config: Dict[str, Any]) -> str:
 
     script_path = loader_script_map.get(source_type)
     if not script_path or not os.path.exists(script_path):
-        logger.error(f"Loader script not found for source type: {source_type} at {script_path}")
-        return 'failed'
+        error_msg = f"Loader script not found for source type: {source_type} at {script_path}"
+        logger.error(error_msg)
+        return 'failed', None, error_msg, None, None
 
     # Prepare environment variables for the loader
     env = os.environ.copy()
@@ -107,36 +111,79 @@ def trigger_loader(config: Dict[str, Any]) -> str:
         
         if result.returncode == 0:
             logger.info(f"Successfully loaded table: {source_tablename}")
-            # The loader might output the new incremental value to stdout or a specific format
-            # For simplicity, let's assume the loader logs the new max value or we handle it differently.
-            # IN A REAL SCENARIO: The loader should probably return the max value structured.
-            # Here, we will parse the last line of stdout if it contains "LAST_INCREMENTAL_VALUE: <val>"
-            # OR, we rely on the loader itself to update the config DB? 
-            # Better architecture: Loader returns data, Driver updates DB. 
             
-            # Let's try to parse the last incremental value from the output logs if provided
+            # Parse output for metadata
             lines = result.stdout.strip().split('\n')
             new_incremental_value = None
+            rows_processed = None
+            file_paths = []
+            
             for line in lines:
                 if "LAST_INCREMENTAL_VALUE:" in line:
                     new_incremental_value = line.split("LAST_INCREMENTAL_VALUE:")[1].strip()
                     logger.info(f"Loader returned last_incremental_value: {new_incremental_value}")
+                if "ROWS_PROCESSED:" in line:
+                    try:
+                        rows_processed = int(line.split("ROWS_PROCESSED:")[1].strip())
+                    except ValueError:
+                        pass
+                if "FILE_PATH:" in line:
+                    file_paths.append(line.split("FILE_PATH:")[1].strip())
             
-            return 'success', new_incremental_value
+            # Join file paths with comma separator
+            file_paths_str = ",".join(file_paths) if file_paths else None
+            return 'success', new_incremental_value, None, rows_processed, file_paths_str
         else:
-            logger.error(f"Loader failed for {source_tablename}. Stderr: {result.stderr}")
-            return 'failed', None
+            error_msg = result.stderr[:500] if result.stderr else "Unknown error"
+            logger.error(f"Loader failed for {source_tablename}. Stderr: {error_msg}")
+            return 'failed', None, error_msg, None, None
 
     except subprocess.TimeoutExpired:
+        error_msg = f"Loader timed out after 1 hour"
         logger.error(f"Loader timed out for {source_tablename}")
-        return 'failed', None
+        return 'failed', None, error_msg, None, None
     except Exception as e:
+        error_msg = str(e)
         logger.error(f"Unexpected error triggering loader: {e}")
-        return 'failed', None
+        return 'failed', None, error_msg, None, None
 
-def update_execution_status(conn: sqlite3.Connection, source_tablename: str, status: str, new_inc_val: Optional[str] = None):
+def calculate_time_taken(started_at: datetime, completed_at: datetime) -> str:
+    """Calculate time taken in HH:MM:SS format"""
+    delta = completed_at - started_at
+    total_seconds = int(delta.total_seconds())
+    hours, remainder = divmod(total_seconds, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+
+def log_pipeline_run(conn: sqlite3.Connection, source_tablename: str, pipeline_type: str, 
+                     status: str, error_message: Optional[str] = None, 
+                     rows_processed: Optional[int] = None, file_paths: Optional[str] = None,
+                     started_at: Optional[datetime] = None):
+    """Insert a record into pipeline_run_logs table"""
     cursor = conn.cursor()
-    now = datetime.now().isoformat()
+    completed_at = datetime.now(IST)
+    completed_at_str = completed_at.isoformat() if status in ['success', 'failed'] else None
+    started_at_str = started_at.isoformat() if started_at else None
+    
+    # Calculate time taken in HH:MM:SS format
+    time_taken = None
+    if started_at and status in ['success', 'failed']:
+        time_taken = calculate_time_taken(started_at, completed_at)
+    
+    cursor.execute("""
+        INSERT INTO pipeline_run_logs 
+        (source_tablename, pipeline_type, status, error_message, rows_processed, file_paths, started_at, completed_at, time_taken)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (source_tablename, pipeline_type, status, error_message, rows_processed, file_paths, started_at_str, completed_at_str, time_taken))
+    conn.commit()
+    logger.info(f"Logged pipeline run for {source_tablename}: {status} (time: {time_taken})")
+
+def update_execution_status(conn: sqlite3.Connection, source_tablename: str, status: str, 
+                           new_inc_val: Optional[str] = None, error_message: Optional[str] = None,
+                           rows_processed: Optional[int] = None, file_paths: Optional[str] = None,
+                           started_at: Optional[datetime] = None):
+    cursor = conn.cursor()
+    now = datetime.now(IST).isoformat()
     
     query = """
     UPDATE pipeline_config
@@ -153,6 +200,9 @@ def update_execution_status(conn: sqlite3.Connection, source_tablename: str, sta
         
     conn.commit()
     logger.info(f"Updated loader run status for {source_tablename}: {status} at {now}")
+    
+    # Log to pipeline_run_logs table
+    log_pipeline_run(conn, source_tablename, 'source_to_dl', status, error_message, rows_processed, file_paths, started_at)
 
 def main():
     logger.info("Starting driver script for source to dl loaders")
@@ -164,8 +214,18 @@ def main():
         
         for config in configs:
             if should_run_now(config):
-                status, new_inc_val = trigger_loader(config)
-                update_execution_status(conn, config['source_tablename'], status, new_inc_val)
+                started_at = datetime.now(IST)
+                status, new_inc_val, error_msg, rows_processed, file_paths = trigger_loader(config)
+                update_execution_status(
+                    conn, 
+                    config['source_tablename'], 
+                    status, 
+                    new_inc_val, 
+                    error_msg, 
+                    rows_processed, 
+                    file_paths,
+                    started_at
+                )
         
         conn.close()
         logger.info("Driver script completed.")
