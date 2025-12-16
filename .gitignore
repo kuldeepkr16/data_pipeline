@@ -18,6 +18,7 @@ out/
 
 # Project specific - Data Storage
 minio_data/
+datalake/minio_resources/data/
 databases/config_db/data/
 databases/source_pg_db/data/
 databases/sink_pg_db/data/
