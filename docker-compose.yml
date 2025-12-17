@@ -35,7 +35,7 @@ services:
   # MinIO Object Storage
   minio:
     build:
-      context: ./minio
+      context: ./datalake/minio_resources
     container_name: minio_server
     ports:
       - "9000:9000"
@@ -44,7 +44,7 @@ services:
       MINIO_ROOT_USER: minioadmin
       MINIO_ROOT_PASSWORD: minioadmin
     volumes:
-      - ./minio_data:/data
+      - ./datalake/minio_resources/data:/data
     command: server /data --console-address ":9001"
     networks:
       - data_pipeline_net
@@ -67,7 +67,7 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - ./databases/config_db/data:/data  # Mount the same volume to access config.db
+      - ./databases/config_db/data:/data # Mount the same volume to access config.db
     networks:
       - data_pipeline_net
     depends_on:
@@ -87,12 +87,13 @@ services:
       - ./frontend:/app
       - /app/node_modules
 
-  # Postgres to Datalake Loader
-  postgres_loader:
+  # Driver Script for Source to Data Lake
+  driver_source_to_dl:
     build:
-      context: ./data_pipeline_resources/source_to_datalake/postgres_to_datalake
-    container_name: postgres_loader
+      context: ./data_pipeline_resources/source_to_dl/driver_source_to_dl
+    container_name: driver_source_to_dl
     environment:
+      CONFIG_DB_PATH: /data/config.db
       POSTGRES_HOST: source_pg_db
       POSTGRES_PORT: 5432
       POSTGRES_DB: source_db
@@ -102,45 +103,45 @@ services:
       MINIO_ACCESS_KEY: minioadmin
       MINIO_SECRET_KEY: minioadmin
       MINIO_BUCKET: datalake
-      CONFIG_DB_PATH: /data/config.db
     volumes:
-      - ./databases/config_db/data:/data  # Mount config DB
+      - ./databases/config_db/data:/data
+      - ./data_pipeline_resources/source_to_dl:/loaders
     networks:
       - data_pipeline_net
     depends_on:
+      - config_db
       - source_pg_db
       - minio
-      - config_db
     # This service doesn't run continuously, it's executed on demand
-    command: tail -f /dev/null  # Keep container running
+    command: tail -f /dev/null
 
-  # Driver Script for Source to Datalake
-  driver_source_to_datalake:
+  # Driver Script for Data Lake to Sink
+  driver_dl_to_sink:
     build:
-      context: ./data_pipeline_resources/source_to_datalake/driver_source_to_datalake
-    container_name: driver_source_to_datalake
+      context: ./data_pipeline_resources/dl_to_sink/driver_dl_to_sink
+    container_name: driver_dl_to_sink
     environment:
       CONFIG_DB_PATH: /data/config.db
-      POSTGRES_HOST: source_pg_db
-      POSTGRES_PORT: 5432
-      POSTGRES_DB: source_db
-      POSTGRES_USER: read_user
-      POSTGRES_PASSWORD: read_password
+      SINK_POSTGRES_HOST: sink_pg_db
+      SINK_POSTGRES_PORT: 5432
+      SINK_POSTGRES_DB: sink_db
+      SINK_POSTGRES_USER: postgres
+      SINK_POSTGRES_PASSWORD: postgres
       MINIO_ENDPOINT: minio_server:9000
       MINIO_ACCESS_KEY: minioadmin
       MINIO_SECRET_KEY: minioadmin
       MINIO_BUCKET: datalake
     volumes:
-      - ./databases/config_db/data:/data  # Mount config DB
-      - ./data_pipeline_resources/source_to_datalake:/loaders  # Mount loaders directory
+      - ./databases/config_db/data:/data
+      - ./data_pipeline_resources/dl_to_sink:/loaders
     networks:
       - data_pipeline_net
     depends_on:
       - config_db
-      - source_pg_db
+      - sink_pg_db
       - minio
     # This service doesn't run continuously, it's executed on demand
-    command: tail -f /dev/null  # Keep container running
+    command: tail -f /dev/null
 
 networks:
   data_pipeline_net:
