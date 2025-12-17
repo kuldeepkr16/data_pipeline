@@ -4,8 +4,11 @@ import time
 import logging
 import subprocess
 import sys
-from datetime import datetime, timedelta
-from typing import List, Dict, Any
+from datetime import datetime, timedelta, timezone
+
+# IST timezone (UTC+5:30)
+IST = timezone(timedelta(hours=5, minutes=30))
+from typing import List, Dict, Any, Optional
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -51,7 +54,7 @@ def should_run_now(config: Dict[str, Any]) -> bool:
     try:
         last_run = datetime.fromisoformat(last_run_str)
         next_run = last_run + timedelta(minutes=schedule_mins)
-        if datetime.now() >= next_run:
+        if datetime.now(IST) >= next_run:
             logger.info(f"Table {source_tablename} is due to run (sink)")
             return True
     except ValueError:
@@ -60,7 +63,11 @@ def should_run_now(config: Dict[str, Any]) -> bool:
     
     return False
 
-def trigger_loader(config: Dict[str, Any]) -> bool:
+def trigger_loader(config: Dict[str, Any]) -> tuple:
+    """
+    Triggers the appropriate loader script based on sink_type.
+    Returns: (status, error_message, rows_processed, file_path)
+    """
     source_table_name = config['source_tablename']
     sink_table_name = config['sink_tablename']
     sink_type = config['sink_type']
@@ -76,8 +83,9 @@ def trigger_loader(config: Dict[str, Any]) -> bool:
     loader_script = loader_script_map.get(sink_type)
     
     if not loader_script or not os.path.exists(loader_script):
-        logger.error(f"Loader script not found for sink type {sink_type}: {loader_script}")
-        return False
+        error_msg = f"Loader script not found for sink type {sink_type}: {loader_script}"
+        logger.error(error_msg)
+        return 'failed', error_msg, None, None
 
     env = os.environ.copy()
     env['SOURCE_TABLE_NAME'] = source_table_name
@@ -96,27 +104,82 @@ def trigger_loader(config: Dict[str, Any]) -> bool:
         if result.returncode == 0:
             logger.info(f"Successfully loaded {source_table_name} to sink table {sink_table_name}")
             logger.info(result.stdout)
-            return True
+            
+            # Parse output for metadata
+            lines = result.stdout.strip().split('\n')
+            rows_processed = None
+            file_paths = []
+            
+            for line in lines:
+                if "ROWS_PROCESSED:" in line:
+                    try:
+                        rows_processed = int(line.split("ROWS_PROCESSED:")[1].strip())
+                    except ValueError:
+                        pass
+                if "FILE_PATH:" in line:
+                    file_paths.append(line.split("FILE_PATH:")[1].strip())
+            
+            # Join file paths with comma separator
+            file_paths_str = ",".join(file_paths) if file_paths else None
+            return 'success', None, rows_processed, file_paths_str
         else:
-            logger.error(f"Loader failed: {result.stderr}")
-            return False
+            error_msg = result.stderr[:500] if result.stderr else "Unknown error"
+            logger.error(f"Loader failed: {error_msg}")
+            return 'failed', error_msg, None, None
     except subprocess.TimeoutExpired:
+        error_msg = "Loader timed out after 1 hour"
         logger.error(f"Loader timed out for {source_table_name}")
-        return False
+        return 'failed', error_msg, None, None
     except Exception as e:
+        error_msg = str(e)
         logger.error(f"Error executing loader: {e}")
-        return False
+        return 'failed', error_msg, None, None
 
-def update_status(conn: sqlite3.Connection, source_tablename: str, success: bool):
+def calculate_time_taken(started_at: datetime, completed_at: datetime) -> str:
+    """Calculate time taken in HH:MM:SS format"""
+    delta = completed_at - started_at
+    total_seconds = int(delta.total_seconds())
+    hours, remainder = divmod(total_seconds, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+
+def log_pipeline_run(conn: sqlite3.Connection, source_tablename: str, pipeline_type: str, 
+                     status: str, error_message: Optional[str] = None, 
+                     rows_processed: Optional[int] = None, file_paths: Optional[str] = None,
+                     started_at: Optional[datetime] = None):
+    """Insert a record into pipeline_run_logs table"""
     cursor = conn.cursor()
-    now = datetime.now().isoformat()
-    status = "success" if success else "failed"
+    completed_at = datetime.now(IST)
+    completed_at_str = completed_at.isoformat() if status in ['success', 'failed'] else None
+    started_at_str = started_at.isoformat() if started_at else None
+    
+    # Calculate time taken in HH:MM:SS format
+    time_taken = None
+    if started_at and status in ['success', 'failed']:
+        time_taken = calculate_time_taken(started_at, completed_at)
+    
+    cursor.execute("""
+        INSERT INTO pipeline_run_logs 
+        (source_tablename, pipeline_type, status, error_message, rows_processed, file_paths, started_at, completed_at, time_taken)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (source_tablename, pipeline_type, status, error_message, rows_processed, file_paths, started_at_str, completed_at_str, time_taken))
+    conn.commit()
+    logger.info(f"Logged pipeline run for {source_tablename}: {status} (time: {time_taken})")
+
+def update_status(conn: sqlite3.Connection, source_tablename: str, status: str,
+                  error_message: Optional[str] = None, rows_processed: Optional[int] = None,
+                  file_paths: Optional[str] = None, started_at: Optional[datetime] = None):
+    cursor = conn.cursor()
+    now = datetime.now(IST).isoformat()
     cursor.execute("""
         UPDATE pipeline_config 
         SET dl_to_sink_last_loader_run_timestamp = ?, dl_to_sink_last_loader_run_status = ?
         WHERE source_tablename = ?
     """, (now, status, source_tablename))
     conn.commit()
+    
+    # Log to pipeline_run_logs table
+    log_pipeline_run(conn, source_tablename, 'dl_to_sink', status, error_message, rows_processed, file_paths, started_at)
 
 def main():
     logger.info("Starting DL to Sink Driver")
@@ -128,8 +191,17 @@ def main():
         
         for config in configs:
             if should_run_now(config):
-                success = trigger_loader(config)
-                update_status(conn, config['source_tablename'], success)
+                started_at = datetime.now(IST)
+                status, error_msg, rows_processed, file_paths = trigger_loader(config)
+                update_status(
+                    conn, 
+                    config['source_tablename'], 
+                    status,
+                    error_msg,
+                    rows_processed,
+                    file_paths,
+                    started_at
+                )
         
         conn.close()
     except Exception as e:

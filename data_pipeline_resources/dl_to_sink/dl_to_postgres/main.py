@@ -98,6 +98,8 @@ def main():
         latest_file = get_latest_parquet_file(client, MINIO_BUCKET, SOURCE_TABLE_NAME)
         if not latest_file:
             logger.warning(f"No parquet files found for {SOURCE_TABLE_NAME} in MinIO")
+            # Output zero rows processed
+            print(f"ROWS_PROCESSED:0", file=sys.stdout)
             sys.exit(0)
             
         logger.info(f"Reading latest file: {latest_file.object_name}")
@@ -106,10 +108,18 @@ def main():
         response = client.get_object(MINIO_BUCKET, latest_file.object_name)
         data = response.read()
         df = pd.read_parquet(io.BytesIO(data))
-        logger.info(f"Read {len(df)} rows")
+        rows_count = len(df)
+        logger.info(f"Read {rows_count} rows")
         
         # 3. Write to Sink
         load_to_sink(df, SINK_TABLENAME)
+        
+        # 4. Output metadata for driver to capture
+        file_path = f"{MINIO_BUCKET}/{latest_file.object_name}"
+        print(f"FILE_PATH:{file_path}", file=sys.stdout)
+        print(f"ROWS_PROCESSED:{rows_count}", file=sys.stdout)
+        logger.info(f"Output file_path: {file_path}")
+        logger.info(f"Output rows_processed: {rows_count}")
         
     except Exception as e:
         logger.error(f"Loader failed: {e}", exc_info=True)

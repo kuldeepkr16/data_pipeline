@@ -14,7 +14,10 @@ import os
 import sys
 import logging
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
+
+# IST timezone (UTC+5:30)
+IST = timezone(timedelta(hours=5, minutes=30))
 from typing import Optional
 import psycopg2  # type: ignore
 import pandas as pd  # type: ignore
@@ -167,11 +170,11 @@ def get_max_incremental_value(df: pd.DataFrame, incremental_key: str) -> Optiona
 
 def load_data_to_minio(source_tablename: str, load_type: str, 
                        incremental_key: Optional[str], 
-                       last_incremental_value: Optional[str]) -> tuple[bool, Optional[str], Optional[str]]:
+                       last_incremental_value: Optional[str]) -> tuple[bool, Optional[str], Optional[str], Optional[str], Optional[int]]:
     """Load data from Postgres to MinIO
     
     Returns:
-        Tuple of (success: bool, error: Optional[str], max_incremental_value: Optional[str])
+        Tuple of (success: bool, error: Optional[str], max_incremental_value: Optional[str], file_path: Optional[str], rows_processed: Optional[int])
     """
     pg_conn = None
     try:
@@ -192,7 +195,7 @@ def load_data_to_minio(source_tablename: str, load_type: str,
         if df.empty:
             logger.warning(f"No data found for {source_tablename}")
             # Still return success, but no incremental value to update
-            return True, None, None
+            return True, None, None, None, 0
         
         # Get max incremental value for incremental loads
         max_incremental_value = None
@@ -209,7 +212,8 @@ def load_data_to_minio(source_tablename: str, load_type: str,
         
         # Define object path
         # Standard: source_to_dl/dl_tablename/yyyy/mm/dd/hh/tablename_yyyymmdd_hhmmss.parquet
-        now = datetime.now()
+        # Use IST timezone for consistency
+        now = datetime.now(IST)
         timestamp = now.strftime('%Y%m%d_%H%M%S')
         year = now.strftime('%Y')
         month = now.strftime('%m')
@@ -217,6 +221,7 @@ def load_data_to_minio(source_tablename: str, load_type: str,
         hour = now.strftime('%H')
         
         object_name = f"{SOURCE_TYPE}_to_dl/dl_{source_tablename}/{year}/{month}/{day}/{hour}/{source_tablename}_{timestamp}.parquet"
+        rows_count = len(df)
         
         # Convert DataFrame to Parquet format in memory
         parquet_buffer = io.BytesIO()
@@ -233,19 +238,21 @@ def load_data_to_minio(source_tablename: str, load_type: str,
             content_type='application/parquet'
         )
         
-        logger.info(f"Successfully uploaded {len(df)} rows to {object_name}")
+        logger.info(f"Successfully uploaded {rows_count} rows to {object_name}")
         
         # Close PostgreSQL connection
         pg_conn.close()
         
-        return True, None, max_incremental_value
+        # Return full MinIO path
+        full_path = f"{MINIO_BUCKET}/{object_name}"
+        return True, None, max_incremental_value, full_path, rows_count
         
     except Exception as e:
         error_msg = f"Error loading data: {str(e)}"
         logger.error(error_msg, exc_info=True)
         if pg_conn:
             pg_conn.close()
-        return False, error_msg, None
+        return False, error_msg, None, None, None
 
 
 def write_status_to_config(success: bool, error: Optional[str] = None):
@@ -295,7 +302,7 @@ def main():
         logger.info(f"Last incremental value: {LAST_INCREMENTAL_VALUE or 'None (first run)'}")
     
     # Load data
-    success, error, max_incremental_value = load_data_to_minio(
+    success, error, max_incremental_value, file_path, rows_processed = load_data_to_minio(
         SOURCE_TABLENAME,
         LOAD_TYPE,
         INCREMENTAL_KEY if INCREMENTAL_KEY else None,
@@ -305,10 +312,17 @@ def main():
     # Write status to config
     write_status_to_config(success, error)
     
-    # Output last_incremental_value for incremental loads on success
-    if success and LOAD_TYPE == 'incremental' and max_incremental_value:
-        print(f"LAST_INCREMENTAL_VALUE={max_incremental_value}", file=sys.stdout)
-        logger.info(f"Output last_incremental_value: {max_incremental_value}")
+    # Output metadata for driver to capture
+    if success:
+        if file_path:
+            print(f"FILE_PATH:{file_path}", file=sys.stdout)
+            logger.info(f"Output file_path: {file_path}")
+        if rows_processed is not None:
+            print(f"ROWS_PROCESSED:{rows_processed}", file=sys.stdout)
+            logger.info(f"Output rows_processed: {rows_processed}")
+        if LOAD_TYPE == 'incremental' and max_incremental_value:
+            print(f"LAST_INCREMENTAL_VALUE:{max_incremental_value}", file=sys.stdout)
+            logger.info(f"Output last_incremental_value: {max_incremental_value}")
     
     if not success:
         logger.error(f"Load failed: {error}")
