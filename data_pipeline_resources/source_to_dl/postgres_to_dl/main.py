@@ -14,6 +14,8 @@ import os
 import sys
 import logging
 import sqlite3
+import time
+import random
 from datetime import datetime, timezone, timedelta
 
 # IST timezone (UTC+5:30)
@@ -293,6 +295,11 @@ def main():
     if not SOURCE_TABLENAME:
         logger.error("SOURCE_TABLENAME environment variable is required")
         sys.exit(1)
+    
+    # Simulate processing time (3-8 seconds)
+    sleep_time = random.uniform(3, 8)
+    logger.info(f"Processing... (simulated delay: {sleep_time:.1f}s)")
+    time.sleep(sleep_time)
     
     logger.info(f"Starting Postgres to Datalake loader for table: {SOURCE_TABLENAME}")
     logger.info(f"Load type: {LOAD_TYPE}")

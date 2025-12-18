@@ -73,9 +73,8 @@ CREATE TABLE IF NOT EXISTS pipeline_runs (
 
 -- Insert default pipeline stages
 INSERT OR IGNORE INTO pipeline_stages (pipeline_name, stage_order, stage_name, stage_type, driver_container) VALUES
-('default', 1, 'Extract from Source', 'source_to_dl', 'driver_source_to_dl'),
-('default', 2, 'Load to Data Lake', 'source_to_dl', 'driver_source_to_dl'),
-('default', 3, 'Transform & Load to Sink', 'dl_to_sink', 'driver_dl_to_sink');
+('default', 1, 'Source to Data Lake', 'source_to_dl', 'driver_source_to_dl'),
+('default', 2, 'Data Lake to Sink', 'dl_to_sink', 'driver_dl_to_sink');
 
 -- Insert dummy data
 INSERT OR IGNORE INTO pipeline_config (
