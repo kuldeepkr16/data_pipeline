@@ -37,8 +37,45 @@ CREATE TABLE IF NOT EXISTS pipeline_run_logs (
     started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     completed_at TIMESTAMP,
     time_taken TEXT,              -- Duration in HH:MM:SS format
+    pipeline_run_id INTEGER,      -- Links to pipeline_runs for grouped execution
+    stage_order INTEGER,          -- Order of this stage in the pipeline run
+    FOREIGN KEY (source_tablename) REFERENCES pipeline_config(source_tablename),
+    FOREIGN KEY (pipeline_run_id) REFERENCES pipeline_runs(id)
+);
+
+-- Pipeline stage definitions (config-driven pipeline structure)
+CREATE TABLE IF NOT EXISTS pipeline_stages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    pipeline_name TEXT NOT NULL,      -- e.g., 'default', 'full_sync', 'incremental'
+    stage_order INTEGER NOT NULL,     -- 1, 2, 3... execution order
+    stage_name TEXT NOT NULL,         -- Display name: 'Extract from Source', 'Load to Data Lake'
+    stage_type TEXT NOT NULL,         -- 'source_to_dl' or 'dl_to_sink'
+    driver_container TEXT NOT NULL,   -- Container to execute: 'driver_source_to_dl'
+    is_active BOOLEAN DEFAULT 1,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(pipeline_name, stage_order)
+);
+
+-- Pipeline runs (tracks full pipeline execution across all stages)
+CREATE TABLE IF NOT EXISTS pipeline_runs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    source_tablename TEXT NOT NULL,
+    pipeline_name TEXT NOT NULL,      -- Which pipeline definition to use
+    status TEXT NOT NULL,             -- 'pending', 'running', 'success', 'failed', 'partial'
+    current_stage INTEGER DEFAULT 0,  -- Current stage being executed
+    total_stages INTEGER,             -- Total stages in this pipeline
+    triggered_by TEXT DEFAULT 'manual', -- 'manual', 'schedule', 'api'
+    started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    completed_at TIMESTAMP,
+    error_message TEXT,
     FOREIGN KEY (source_tablename) REFERENCES pipeline_config(source_tablename)
 );
+
+-- Insert default pipeline stages
+INSERT OR IGNORE INTO pipeline_stages (pipeline_name, stage_order, stage_name, stage_type, driver_container) VALUES
+('default', 1, 'Extract from Source', 'source_to_dl', 'driver_source_to_dl'),
+('default', 2, 'Load to Data Lake', 'source_to_dl', 'driver_source_to_dl'),
+('default', 3, 'Transform & Load to Sink', 'dl_to_sink', 'driver_dl_to_sink');
 
 -- Insert dummy data
 INSERT OR IGNORE INTO pipeline_config (
