@@ -483,6 +483,26 @@ export default function Home() {
               Data Pipeline <span className="text-indigo-400">Reimagined</span>
             </span>
           </div>
+          <nav className="hidden md:flex space-x-8">
+            <button
+              onClick={() => setActiveTab('dashboard')}
+              className={`transition-colors text-sm font-medium ${activeTab === 'dashboard' ? 'text-white' : 'text-gray-300 hover:text-white'}`}
+            >
+              Dashboard
+            </button>
+            <button
+              onClick={() => setActiveTab('logs')}
+              className={`transition-colors text-sm font-medium ${activeTab === 'logs' ? 'text-white' : 'text-gray-300 hover:text-white'}`}
+            >
+              Run Logs
+            </button>
+            <button
+              onClick={() => setActiveTab('configurations')}
+              className={`transition-colors text-sm font-medium ${activeTab === 'configurations' ? 'text-white' : 'text-gray-300 hover:text-white'}`}
+            >
+              Configurations
+            </button>
+          </nav>
           <div className="flex items-center">
             <span className="h-2 w-2 rounded-full bg-green-500 mr-2 animate-pulse"></span>
             <span className="text-xs text-green-400 font-mono">SYSTEM ONLINE</span>
@@ -493,26 +513,6 @@ export default function Home() {
       {/* Main Content */}
       <main className="flex-grow flex flex-col items-center p-8 md:p-12">
         <div className="w-full max-w-7xl">
-          {/* Tab Navigation */}
-          <div className="flex space-x-1 mb-8 bg-gray-900/50 p-1 rounded-xl w-fit">
-            {[
-              { id: 'dashboard' as TabType, label: 'Dashboard', icon: '📊' },
-              { id: 'logs' as TabType, label: 'Run Logs', icon: '📋' },
-              { id: 'configurations' as TabType, label: 'Configurations', icon: '⚙️' },
-            ].map((tab) => (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={`px-6 py-3 rounded-lg text-sm font-medium transition-all ${activeTab === tab.id
-                  ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/25'
-                  : 'text-gray-400 hover:text-white hover:bg-white/5'
-                  }`}
-              >
-                <span className="mr-2">{tab.icon}</span>
-                {tab.label}
-              </button>
-            ))}
-          </div>
 
           {loading && (
             <div className="flex justify-center items-center py-20">
