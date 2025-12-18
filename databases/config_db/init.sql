@@ -71,10 +71,13 @@ CREATE TABLE IF NOT EXISTS pipeline_runs (
     FOREIGN KEY (source_tablename) REFERENCES pipeline_config(source_tablename)
 );
 
--- Insert default pipeline stages
+-- Insert default pipeline stages (5 granular stages)
 INSERT OR IGNORE INTO pipeline_stages (pipeline_name, stage_order, stage_name, stage_type, driver_container) VALUES
-('default', 1, 'Source to Data Lake', 'source_to_dl', 'driver_source_to_dl'),
-('default', 2, 'Data Lake to Sink', 'dl_to_sink', 'driver_dl_to_sink');
+('default', 1, 'Driver: Source to DL', 'driver_source_to_dl', 'driver_source_to_dl'),
+('default', 2, 'Loader: Source to DL', 'loader_source_to_dl', 'driver_source_to_dl'),
+('default', 3, 'Verify MinIO File', 'verify_minio', 'backend'),
+('default', 4, 'Driver: DL to Sink', 'driver_dl_to_sink', 'driver_dl_to_sink'),
+('default', 5, 'Loader: DL to Sink', 'loader_dl_to_sink', 'driver_dl_to_sink');
 
 -- Insert dummy data
 INSERT OR IGNORE INTO pipeline_config (
