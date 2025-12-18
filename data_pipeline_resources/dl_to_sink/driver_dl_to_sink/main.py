@@ -136,12 +136,13 @@ def trigger_loader(config: Dict[str, Any]) -> tuple:
         return 'failed', error_msg, None, None
 
 def calculate_time_taken(started_at: datetime, completed_at: datetime) -> str:
-    """Calculate time taken in HH:MM:SS format"""
+    """Calculate time taken in HH:MM:SS.mmm format (includes milliseconds)"""
     delta = completed_at - started_at
-    total_seconds = int(delta.total_seconds())
-    hours, remainder = divmod(total_seconds, 3600)
+    total_seconds = delta.total_seconds()
+    hours, remainder = divmod(int(total_seconds), 3600)
     minutes, seconds = divmod(remainder, 60)
-    return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+    milliseconds = int((total_seconds - int(total_seconds)) * 1000)
+    return f"{hours:02d}:{minutes:02d}:{seconds:02d}.{milliseconds:03d}"
 
 def log_pipeline_run(conn: sqlite3.Connection, source_tablename: str, pipeline_type: str, 
                      status: str, error_message: Optional[str] = None, 
