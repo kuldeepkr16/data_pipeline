@@ -117,3 +117,113 @@ def update_table_config(source_tablename: str, config: ConfigUpdate):
         return {"message": "Config updated successfully", "source_tablename": source_tablename, **config.dict(exclude_unset=True)}
     except sqlite3.Error as e:
         raise HTTPException(status_code=500, detail=f"Database error: {e}")
+
+
+# ============ Pipeline Run Logs Endpoints ============
+
+@app.get("/logs", response_model=List[Dict[str, Any]])
+def get_all_logs():
+    """Get all pipeline run logs ordered by most recent first"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT * FROM pipeline_run_logs 
+            ORDER BY started_at DESC 
+            LIMIT 100
+        """)
+        rows = cursor.fetchall()
+        conn.close()
+        return [dict(row) for row in rows]
+    except sqlite3.Error as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+
+
+@app.get("/logs/{source_tablename}", response_model=List[Dict[str, Any]])
+def get_logs_by_table(source_tablename: str):
+    """Get pipeline run logs for a specific table"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT * FROM pipeline_run_logs 
+            WHERE source_tablename = ? 
+            ORDER BY started_at DESC
+        """, (source_tablename,))
+        rows = cursor.fetchall()
+        conn.close()
+        return [dict(row) for row in rows]
+    except sqlite3.Error as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+
+
+@app.get("/logs/stats/summary")
+def get_logs_summary():
+    """Get summary statistics for dashboard charts"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Status distribution (for pie chart)
+        cursor.execute("""
+            SELECT status, COUNT(*) as count 
+            FROM pipeline_run_logs 
+            GROUP BY status
+        """)
+        status_dist = [{"name": row["status"], "value": row["count"]} for row in cursor.fetchall()]
+        
+        # Pipeline type distribution (for pie chart)
+        cursor.execute("""
+            SELECT pipeline_type, COUNT(*) as count 
+            FROM pipeline_run_logs 
+            GROUP BY pipeline_type
+        """)
+        type_dist = [{"name": row["pipeline_type"], "value": row["count"]} for row in cursor.fetchall()]
+        
+        # Runs per table (for bar chart)
+        cursor.execute("""
+            SELECT source_tablename, 
+                   COUNT(*) as total_runs,
+                   SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) as success_count,
+                   SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed_count,
+                   SUM(COALESCE(rows_processed, 0)) as total_rows
+            FROM pipeline_run_logs 
+            GROUP BY source_tablename
+        """)
+        runs_per_table = [dict(row) for row in cursor.fetchall()]
+        
+        # Recent runs by day (for bar chart - last 7 days)
+        cursor.execute("""
+            SELECT DATE(started_at) as run_date, 
+                   COUNT(*) as runs,
+                   SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) as success,
+                   SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed
+            FROM pipeline_run_logs 
+            WHERE started_at >= DATE('now', '-7 days')
+            GROUP BY DATE(started_at)
+            ORDER BY run_date
+        """)
+        daily_runs = [dict(row) for row in cursor.fetchall()]
+        
+        # Total stats
+        cursor.execute("""
+            SELECT 
+                COUNT(*) as total_runs,
+                SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) as total_success,
+                SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as total_failed,
+                SUM(COALESCE(rows_processed, 0)) as total_rows_processed
+            FROM pipeline_run_logs
+        """)
+        totals = dict(cursor.fetchone())
+        
+        conn.close()
+        
+        return {
+            "status_distribution": status_dist,
+            "pipeline_type_distribution": type_dist,
+            "runs_per_table": runs_per_table,
+            "daily_runs": daily_runs,
+            "totals": totals
+        }
+    except sqlite3.Error as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {e}")
