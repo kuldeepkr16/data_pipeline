@@ -68,6 +68,7 @@ services:
       - "8000:8000"
     volumes:
       - ./databases/config_db/data:/data # Mount the same volume to access config.db
+      - /var/run/docker.sock:/var/run/docker.sock # Mount Docker socket for triggering pipelines
     networks:
       - data_pipeline_net
     depends_on:

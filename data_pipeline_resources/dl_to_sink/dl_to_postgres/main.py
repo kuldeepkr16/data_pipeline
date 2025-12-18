@@ -6,6 +6,8 @@ Loader: Datalake (MinIO) to Sink (Postgres)
 import os
 import sys
 import logging
+import time
+import random
 import pandas as pd
 from minio import Minio
 from sqlalchemy import create_engine
@@ -88,6 +90,11 @@ def main():
     if not SINK_TABLENAME or not SOURCE_TABLE_NAME:
         logger.error("SINK_TABLENAME or SOURCE_TABLE_NAME env var missing")
         sys.exit(1)
+    
+    # Simulate processing time (4-10 seconds)
+    sleep_time = random.uniform(4, 10)
+    logger.info(f"Processing... (simulated delay: {sleep_time:.1f}s)")
+    time.sleep(sleep_time)
         
     logger.info(f"Starting generic loader for {SOURCE_TABLE_NAME} -> {SINK_TABLENAME}")
     

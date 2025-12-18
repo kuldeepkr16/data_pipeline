@@ -45,7 +45,7 @@ PGPASSWORD=write_password psql -h localhost -p 5433 -U write_user -d sink_db
 ```
 
 ### **MinIO**
-- **Endpoint**: `http://localhost:9000`
+- **Endpoint**: `http://localhost:9001`
 - **Access Key**: `minioadmin`
 - **Secret Key**: `minioadmin`
 

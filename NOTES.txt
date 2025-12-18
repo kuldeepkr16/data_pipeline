@@ -58,3 +58,13 @@ data_pipeline_resources
 datalake
     minio_resources or s3_resources
     minio_resources/data
+
+pipeline stages - 
+1. driver from source to dl
+2. loader from source to dl
+3. minio file (last 2 mins)
+4. driver from dl to sink
+5. loader from dl to sink
+
+each stage has resposibility of writing number of rows loaded 
+and their statuses run to pipeline_run_logs table
