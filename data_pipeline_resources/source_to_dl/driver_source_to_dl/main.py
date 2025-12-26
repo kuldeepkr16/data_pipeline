@@ -172,7 +172,7 @@ def log_pipeline_run(conn: sqlite3.Connection, source_tablename: str, pipeline_t
         time_taken = calculate_time_taken(started_at, completed_at)
     
     cursor.execute("""
-        INSERT INTO pipeline_run_logs 
+        INSERT INTO pipeline_run_stage_logs 
         (source_tablename, pipeline_type, status, error_message, rows_processed, file_paths, started_at, completed_at, time_taken)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (source_tablename, pipeline_type, status, error_message, rows_processed, file_paths, started_at_str, completed_at_str, time_taken))
@@ -202,7 +202,7 @@ def update_execution_status(conn: sqlite3.Connection, source_tablename: str, sta
     conn.commit()
     logger.info(f"Updated loader run status for {source_tablename}: {status} at {now}")
     
-    # Log to pipeline_run_logs table
+    # Log to pipeline_run_stage_logs table
     log_pipeline_run(conn, source_tablename, 'source_to_dl', status, error_message, rows_processed, file_paths, started_at)
 
 def main():
