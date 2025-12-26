@@ -26,7 +26,7 @@ CREATE TABLE IF NOT EXISTS pipeline_config (
 );
 
 -- Create the pipeline run logs table for tracking execution history
-CREATE TABLE IF NOT EXISTS pipeline_run_logs (
+CREATE TABLE IF NOT EXISTS pipeline_run_stage_logs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     source_tablename TEXT NOT NULL,
     pipeline_type TEXT NOT NULL,  -- 'source_to_dl' or 'dl_to_sink'
@@ -37,10 +37,10 @@ CREATE TABLE IF NOT EXISTS pipeline_run_logs (
     started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     completed_at TIMESTAMP,
     time_taken TEXT,              -- Duration in HH:MM:SS format
-    pipeline_run_id INTEGER,      -- Links to pipeline_runs for grouped execution
+    pipeline_run_id INTEGER,      -- Links to pipeline_runs_master for grouped execution
     stage_order INTEGER,          -- Order of this stage in the pipeline run
     FOREIGN KEY (source_tablename) REFERENCES pipeline_config(source_tablename),
-    FOREIGN KEY (pipeline_run_id) REFERENCES pipeline_runs(id)
+    FOREIGN KEY (pipeline_run_id) REFERENCES pipeline_runs_master(id)
 );
 
 -- Pipeline stage definitions (config-driven pipeline structure)
@@ -57,7 +57,7 @@ CREATE TABLE IF NOT EXISTS pipeline_stages (
 );
 
 -- Pipeline runs (tracks full pipeline execution across all stages)
-CREATE TABLE IF NOT EXISTS pipeline_runs (
+CREATE TABLE IF NOT EXISTS pipeline_runs_master (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     source_tablename TEXT NOT NULL,
     pipeline_name TEXT NOT NULL,      -- Which pipeline definition to use

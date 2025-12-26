@@ -136,7 +136,7 @@ def get_all_logs():
         conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute("""
-            SELECT * FROM pipeline_run_logs 
+            SELECT * FROM pipeline_run_stage_logs 
             ORDER BY started_at DESC 
             LIMIT 100
         """)
@@ -154,7 +154,7 @@ def get_logs_by_table(source_tablename: str):
         conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute("""
-            SELECT * FROM pipeline_run_logs 
+            SELECT * FROM pipeline_run_stage_logs 
             WHERE source_tablename = ? 
             ORDER BY started_at DESC
         """, (source_tablename,))
@@ -175,7 +175,7 @@ def get_logs_summary():
         # Status distribution (for pie chart)
         cursor.execute("""
             SELECT status, COUNT(*) as count 
-            FROM pipeline_run_logs 
+            FROM pipeline_run_stage_logs 
             GROUP BY status
         """)
         status_dist = [{"name": row["status"], "value": row["count"]} for row in cursor.fetchall()]
@@ -183,7 +183,7 @@ def get_logs_summary():
         # Pipeline type distribution (for pie chart)
         cursor.execute("""
             SELECT pipeline_type, COUNT(*) as count 
-            FROM pipeline_run_logs 
+            FROM pipeline_run_stage_logs 
             GROUP BY pipeline_type
         """)
         type_dist = [{"name": row["pipeline_type"], "value": row["count"]} for row in cursor.fetchall()]
@@ -195,7 +195,7 @@ def get_logs_summary():
                    SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) as success_count,
                    SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed_count,
                    SUM(COALESCE(rows_processed, 0)) as total_rows
-            FROM pipeline_run_logs 
+            FROM pipeline_run_stage_logs 
             GROUP BY source_tablename
         """)
         runs_per_table = [dict(row) for row in cursor.fetchall()]
@@ -206,7 +206,7 @@ def get_logs_summary():
                    COUNT(*) as runs,
                    SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) as success,
                    SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed
-            FROM pipeline_run_logs 
+            FROM pipeline_run_stage_logs 
             WHERE started_at >= DATE('now', '-7 days')
             GROUP BY DATE(started_at)
             ORDER BY run_date
@@ -220,7 +220,7 @@ def get_logs_summary():
                 SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) as total_success,
                 SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as total_failed,
                 SUM(COALESCE(rows_processed, 0)) as total_rows_processed
-            FROM pipeline_run_logs
+            FROM pipeline_run_stage_logs
         """)
         totals = dict(cursor.fetchone())
         
@@ -310,7 +310,7 @@ def get_pipeline_runs():
         conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute("""
-            SELECT * FROM pipeline_runs 
+            SELECT * FROM pipeline_runs_master 
             ORDER BY started_at DESC 
             LIMIT 50
         """)
@@ -319,7 +319,7 @@ def get_pipeline_runs():
         # Get stage logs for each run
         for run in runs:
             cursor.execute("""
-                SELECT * FROM pipeline_run_logs 
+                SELECT * FROM pipeline_run_stage_logs 
                 WHERE pipeline_run_id = ?
                 ORDER BY stage_order
             """, (run['id'],))
@@ -338,7 +338,7 @@ def get_pipeline_run(run_id: int):
         conn = get_db_connection()
         cursor = conn.cursor()
         
-        cursor.execute("SELECT * FROM pipeline_runs WHERE id = ?", (run_id,))
+        cursor.execute("SELECT * FROM pipeline_runs_master WHERE id = ?", (run_id,))
         run = cursor.fetchone()
         if not run:
             raise HTTPException(status_code=404, detail="Pipeline run not found")
@@ -347,7 +347,7 @@ def get_pipeline_run(run_id: int):
         
         # Get stage logs
         cursor.execute("""
-            SELECT * FROM pipeline_run_logs 
+            SELECT * FROM pipeline_run_stage_logs 
             WHERE pipeline_run_id = ?
             ORDER BY stage_order
         """, (run_id,))
@@ -374,7 +374,7 @@ def get_runs_by_table(source_tablename: str):
         conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute("""
-            SELECT * FROM pipeline_runs 
+            SELECT * FROM pipeline_runs_master 
             WHERE source_tablename = ?
             ORDER BY started_at DESC
             LIMIT 20
@@ -383,7 +383,7 @@ def get_runs_by_table(source_tablename: str):
         
         for run in runs:
             cursor.execute("""
-                SELECT * FROM pipeline_run_logs 
+                SELECT * FROM pipeline_run_stage_logs 
                 WHERE pipeline_run_id = ?
                 ORDER BY stage_order
             """, (run['id'],))
@@ -410,7 +410,7 @@ def execute_pipeline_stage(run_id: int, stage: Dict, source_tablename: str):
     
     # Insert stage log as running
     cursor.execute("""
-        INSERT INTO pipeline_run_logs 
+        INSERT INTO pipeline_run_stage_logs 
         (source_tablename, pipeline_type, status, started_at, pipeline_run_id, stage_order)
         VALUES (?, ?, 'running', ?, ?, ?)
     """, (source_tablename, stage_type, started_at.isoformat(), run_id, stage['stage_order']))
@@ -419,7 +419,7 @@ def execute_pipeline_stage(run_id: int, stage: Dict, source_tablename: str):
     
     # Update pipeline run current stage
     cursor.execute("""
-        UPDATE pipeline_runs SET current_stage = ?, status = 'running'
+        UPDATE pipeline_runs_master SET current_stage = ?, status = 'running'
         WHERE id = ?
     """, (stage['stage_order'], run_id))
     conn.commit()
@@ -532,7 +532,7 @@ def execute_pipeline_stage(run_id: int, stage: Dict, source_tablename: str):
         
         if success:
             cursor.execute("""
-                UPDATE pipeline_run_logs 
+                UPDATE pipeline_run_stage_logs 
                 SET status = 'success', completed_at = ?, time_taken = ?, 
                     rows_processed = ?, file_paths = ?
                 WHERE id = ?
@@ -543,7 +543,7 @@ def execute_pipeline_stage(run_id: int, stage: Dict, source_tablename: str):
             return True, None
         else:
             cursor.execute("""
-                UPDATE pipeline_run_logs 
+                UPDATE pipeline_run_stage_logs 
                 SET status = 'failed', completed_at = ?, time_taken = ?, error_message = ?
                 WHERE id = ?
             """, (completed_at.isoformat(), time_taken, error_msg, log_id))
@@ -553,7 +553,7 @@ def execute_pipeline_stage(run_id: int, stage: Dict, source_tablename: str):
             
     except subprocess.TimeoutExpired:
         cursor.execute("""
-            UPDATE pipeline_run_logs 
+            UPDATE pipeline_run_stage_logs 
             SET status = 'failed', completed_at = ?, error_message = 'Stage timeout after 5 minutes'
             WHERE id = ?
         """, (datetime.now(IST).isoformat(), log_id))
@@ -562,7 +562,7 @@ def execute_pipeline_stage(run_id: int, stage: Dict, source_tablename: str):
         return False, "Stage timeout"
     except Exception as e:
         cursor.execute("""
-            UPDATE pipeline_run_logs 
+            UPDATE pipeline_run_stage_logs 
             SET status = 'failed', completed_at = ?, error_message = ?
             WHERE id = ?
         """, (datetime.now(IST).isoformat(), str(e)[:500], log_id))
@@ -591,7 +591,7 @@ def run_pipeline_async(run_id: int, stages: List[Dict], source_tablename: str):
     final_status = 'success' if all_success else 'failed'
     
     cursor.execute("""
-        UPDATE pipeline_runs 
+        UPDATE pipeline_runs_master 
         SET status = ?, completed_at = ?, error_message = ?
         WHERE id = ?
     """, (final_status, completed_at.isoformat(), error_message, run_id))
@@ -630,7 +630,7 @@ def trigger_pipeline(source_tablename: str, request: TriggerRequest, background_
         # Create pipeline run
         started_at = datetime.now(IST)
         cursor.execute("""
-            INSERT INTO pipeline_runs 
+            INSERT INTO pipeline_runs_master 
             (source_tablename, pipeline_name, status, total_stages, triggered_by, started_at)
             VALUES (?, ?, 'pending', ?, ?, ?)
         """, (source_tablename, request.pipeline_name, len(stages), request.triggered_by, started_at.isoformat()))
