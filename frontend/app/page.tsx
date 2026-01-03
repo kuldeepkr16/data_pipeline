@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { Config, PipelineLog, PipelineRun, PipelineStage } from '../types';
 import { Header } from '../components/layout/Header';
 import { Footer } from '../components/layout/Footer';
@@ -23,8 +24,17 @@ interface LogStats {
 type TabType = 'pipelines' | 'configurations' | 'logs' | 'dashboard';
 
 export default function Home() {
+  const searchParams = useSearchParams();
   // --- State ---
   const [activeTab, setActiveTab] = useState<TabType>('pipelines');
+
+  useEffect(() => {
+    const tabParam = searchParams.get('tab');
+    if (tabParam && ['pipelines', 'configurations', 'logs', 'dashboard'].includes(tabParam)) {
+      setActiveTab(tabParam as TabType);
+    }
+  }, [searchParams]);
+
   const [configs, setConfigs] = useState<Config[]>([]);
   const [logs, setLogs] = useState<PipelineLog[]>([]);
   const [stats, setStats] = useState<LogStats | null>(null);
