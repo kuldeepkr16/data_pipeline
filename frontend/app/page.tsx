@@ -97,11 +97,22 @@ export default function Home() {
   const [logsLoaded, setLogsLoaded] = useState(false);
 
   // Pagination & Filtering
+  // Pagination & Filtering
   const [logsPage, setLogsPage] = useState(1);
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
-  const [tempStartDate, setTempStartDate] = useState('');
-  const [tempEndDate, setTempEndDate] = useState('');
+
+  // Calculate default dates
+  const today = new Date();
+  const thirtyDaysAgo = new Date();
+  thirtyDaysAgo.setDate(today.getDate() - 30);
+
+  const formatDate = (date: Date) => date.toISOString().split('T')[0];
+  const defaultEndDate = formatDate(today);
+  const defaultStartDate = formatDate(thirtyDaysAgo);
+
+  const [startDate, setStartDate] = useState(defaultStartDate);
+  const [endDate, setEndDate] = useState(defaultEndDate);
+  const [tempStartDate, setTempStartDate] = useState(defaultStartDate);
+  const [tempEndDate, setTempEndDate] = useState(defaultEndDate);
 
   const fetchDashboardData = useCallback(async () => {
     setLoading(true);
@@ -147,7 +158,7 @@ export default function Home() {
     try {
       const params = new URLSearchParams({
         page: logsPage.toString(),
-        limit: '20'
+        limit: '10'
       });
       if (startDate) params.append('start_date', startDate);
       if (endDate) params.append('end_date', endDate + 'T23:59:59');
@@ -867,8 +878,8 @@ export default function Home() {
 
           <button
             onClick={() => setLogsPage(p => p + 1)}
-            disabled={logs.length < 20 || logsLoading}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-all flex items-center gap-2 ${logs.length < 20
+            disabled={logs.length < 10 || logsLoading}
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-all flex items-center gap-2 ${logs.length < 10
               ? 'text-gray-600 cursor-not-allowed'
               : 'text-gray-400 hover:text-white hover:bg-white/5'
               }`}

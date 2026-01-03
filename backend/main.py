@@ -134,7 +134,7 @@ def update_table_config(source_tablename: str, config: ConfigUpdate):
 @app.get("/logs", response_model=List[Dict[str, Any]])
 def get_all_logs(
     page: int = 1,
-    limit: int = 100,
+    limit: int = 10,
     start_date: Optional[str] = None,
     end_date: Optional[str] = None
 ):
