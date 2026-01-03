@@ -35,7 +35,7 @@ services:
   # MinIO Object Storage
   minio:
     build:
-      context: ./datalake/minio_resources
+      context: ./datalake/minio_resources/minio
     container_name: minio_server
     ports:
       - "9000:9000"

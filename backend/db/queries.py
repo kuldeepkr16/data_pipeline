@@ -83,8 +83,8 @@ GET_STAGES_BY_PIPELINE = """
 """
 
 CREATE_STAGE = """
-    INSERT INTO pipeline_stages (pipeline_name, stage_order, stage_name, stage_type, driver_container)
-    VALUES (?, ?, ?, ?, ?)
+    INSERT INTO pipeline_stages (id, pipeline_name, stage_order, stage_name, stage_type, driver_container)
+    VALUES (?, ?, ?, ?, ?, ?)
 """
 
 # Runs Queries
@@ -106,14 +106,14 @@ GET_RUNS_MASTER_BY_TABLE = """
     SELECT * FROM pipeline_runs_master 
     WHERE source_tablename = ?
     ORDER BY started_at DESC
-    LIMIT 20
+    LIMIT 50
 """
 
 # Execution & Trigger Queries
 INSERT_STAGE_LOG_RUNNING = """
     INSERT INTO pipeline_run_stage_logs 
-    (source_tablename, pipeline_type, status, started_at, pipeline_run_id, stage_order)
-    VALUES (?, ?, 'running', ?, ?, ?)
+    (id, source_tablename, pipeline_type, status, started_at, pipeline_run_id, stage_order)
+    VALUES (?, ?, ?, 'running', ?, ?, ?)
 """
 
 UPDATE_RUN_MASTER_STAGE = """
@@ -154,6 +154,6 @@ UPDATE_RUN_MASTER_STATUS = """
 
 INSERT_RUN_MASTER_PENDING = """
     INSERT INTO pipeline_runs_master 
-    (source_tablename, pipeline_name, status, total_stages, triggered_by, started_at)
-    VALUES (?, ?, 'pending', ?, ?, ?)
+    (id, source_tablename, pipeline_name, status, total_stages, triggered_by, started_at)
+    VALUES (?, ?, ?, 'pending', ?, ?, ?)
 """
