@@ -14,6 +14,42 @@ export interface Config {
     sink_type?: string;
 }
 
+export interface ConfigCreate {
+    source_tablename: string;
+    sink_tablename: string;
+    source_type?: string;
+    sink_type?: string;
+    source_to_dl_schedule?: number;
+    source_to_dl_load_type?: string;
+    dl_to_sink_schedule?: number;
+    dl_to_sink_load_type?: string;
+}
+
+export interface ConnectionCreds {
+    host?: string;
+    port?: number;
+    user?: string;
+    password?: string;
+    dbname?: string;
+    [key: string]: any;
+}
+
+export interface SourceConfig {
+    id?: string;
+    source_name: string;
+    source_type?: string;
+    source_creds?: ConnectionCreds;
+    created_at?: string;
+}
+
+export interface DestinationConfig {
+    id?: string;
+    destination_name: string;
+    destination_type?: string;
+    destination_creds?: ConnectionCreds;
+    created_at?: string;
+}
+
 export interface PipelineLog {
     id: string;
     source_tablename: string;

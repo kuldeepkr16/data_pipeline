@@ -1,5 +1,5 @@
-from pydantic import BaseModel
-from typing import Optional
+from pydantic import BaseModel, Field
+from typing import Optional, Dict, Any
 
 class ConfigUpdate(BaseModel):
     source_to_dl_schedule: Optional[int] = None
@@ -8,6 +8,31 @@ class ConfigUpdate(BaseModel):
     dl_to_sink_schedule: Optional[int] = None
     dl_to_sink_load_type: Optional[str] = None
     dl_to_sink_is_active: Optional[int] = None
+
+class ConfigCreate(BaseModel):
+    source_tablename: str
+    sink_tablename: str
+    source_type: Optional[str] = 'postgres'
+    sink_type: Optional[str] = 'postgres'
+    source_to_dl_schedule: int = 60
+    source_to_dl_load_type: str = 'full'
+    dl_to_sink_schedule: int = 60
+    dl_to_sink_load_type: str = 'full'
+
+# New Models: Connections (Sources/Destinations)
+class SourceConfig(BaseModel):
+    id: Optional[str] = None
+    source_name: str
+    source_type: Optional[str] = 'postgres'
+    source_creds: Optional[Dict[str, Any]] = None # JSON stored as string in DB
+    created_at: Optional[str] = None
+
+class DestinationConfig(BaseModel):
+    id: Optional[str] = None
+    destination_name: str
+    destination_type: Optional[str] = 'postgres'
+    destination_creds: Optional[Dict[str, Any]] = None # JSON stored as string in DB
+    created_at: Optional[str] = None
 
 class StageCreate(BaseModel):
     pipeline_name: str

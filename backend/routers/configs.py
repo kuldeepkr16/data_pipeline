@@ -3,7 +3,7 @@ from typing import List, Dict, Any
 import sqlite3
 from db.connection import get_db_connection
 from db import queries
-from schemas.models import ConfigUpdate
+from schemas.models import ConfigUpdate, ConfigCreate
 
 router = APIRouter(
     prefix="/config",
@@ -37,6 +37,41 @@ def get_table_config(source_tablename: str):
             raise HTTPException(status_code=404, detail="Table config not found")
             
         return dict(row)
+    except sqlite3.Error as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+
+@router.post("", status_code=201)
+def create_config(config: ConfigCreate):
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Check if table already exists
+        cursor.execute(queries.GET_CONFIG_BY_TABLE, (config.source_tablename,))
+        if cursor.fetchone() is not None:
+             conn.close()
+             raise HTTPException(status_code=400, detail="Configuration for this source table already exists")
+
+        # Insert new config
+        # Using default active status (1) for new configs
+        query = """
+            INSERT INTO pipeline_config (
+                source_tablename, sink_tablename, source_type, sink_type,
+                source_to_dl_schedule, source_to_dl_load_type, source_to_dl_is_active,
+                dl_to_sink_schedule, dl_to_sink_load_type, dl_to_sink_is_active
+            ) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, 1)
+        """
+        
+        cursor.execute(query, (
+            config.source_tablename, config.sink_tablename, config.source_type, config.sink_type,
+            config.source_to_dl_schedule, config.source_to_dl_load_type,
+            config.dl_to_sink_schedule, config.dl_to_sink_load_type
+        ))
+        
+        conn.commit()
+        conn.close()
+        
+        return {"message": "Config created successfully", "config": config}
     except sqlite3.Error as e:
         raise HTTPException(status_code=500, detail=f"Database error: {e}")
 

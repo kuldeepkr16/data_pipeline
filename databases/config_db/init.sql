@@ -1,4 +1,5 @@
 -- Create the standardized pipeline configuration table
+-- DEPRECATED: Splitting into sources_config and destinations_config
 CREATE TABLE IF NOT EXISTS pipeline_config (
     -- Shared Identity
     source_tablename TEXT PRIMARY KEY,
@@ -23,6 +24,24 @@ CREATE TABLE IF NOT EXISTS pipeline_config (
     dl_to_sink_last_incremental_value TIMESTAMP,
     dl_to_sink_last_loader_run_timestamp TIMESTAMP,
     dl_to_sink_last_loader_run_status TEXT
+);
+
+-- NEW: Sources Configuration (Connections)
+CREATE TABLE IF NOT EXISTS sources_config (
+    id TEXT PRIMARY KEY, -- UUID
+    source_name TEXT UNIQUE NOT NULL,
+    source_type TEXT DEFAULT 'postgres',
+    source_creds TEXT, -- JSON: {host, port, user, password, dbname}
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- NEW: Destinations Configuration (Connections)
+CREATE TABLE IF NOT EXISTS destinations_config (
+    id TEXT PRIMARY KEY, -- UUID
+    destination_name TEXT UNIQUE NOT NULL,
+    destination_type TEXT DEFAULT 'postgres',
+    destination_creds TEXT, -- JSON
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Create the pipeline run logs table for tracking execution history
