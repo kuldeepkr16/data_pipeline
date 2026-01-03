@@ -12,6 +12,8 @@ from typing import List, Dict, Any, Optional
 # IST timezone
 IST = timezone(timedelta(hours=5, minutes=30))
 
+import db_queries as queries
+
 app = FastAPI()
 
 # Add CORS middleware
@@ -47,7 +49,7 @@ def get_config():
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM pipeline_config")
+        cursor.execute(queries.GET_ALL_CONFIGS)
         rows = cursor.fetchall()
         conn.close()
         
@@ -63,7 +65,7 @@ def get_table_config(source_tablename: str):
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM pipeline_config WHERE source_tablename = ?", (source_tablename,))
+        cursor.execute(queries.GET_CONFIG_BY_TABLE, (source_tablename,))
         row = cursor.fetchone()
         conn.close()
         
@@ -81,7 +83,7 @@ def update_table_config(source_tablename: str, config: ConfigUpdate):
         cursor = conn.cursor()
         
         # Check if table exists
-        cursor.execute("SELECT source_tablename FROM pipeline_config WHERE source_tablename = ?", (source_tablename,))
+        cursor.execute(queries.CHECK_TABLE_EXISTS, (source_tablename,))
         if cursor.fetchone() is None:
             conn.close()
             raise HTTPException(status_code=404, detail="Table config not found")
@@ -130,16 +132,34 @@ def update_table_config(source_tablename: str, config: ConfigUpdate):
 # ============ Pipeline Run Logs Endpoints ============
 
 @app.get("/logs", response_model=List[Dict[str, Any]])
-def get_all_logs():
-    """Get all pipeline run logs ordered by most recent first"""
+def get_all_logs(
+    page: int = 1,
+    limit: int = 100,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None
+):
+    """Get all pipeline run logs with pagination and filtering"""
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("""
-            SELECT * FROM pipeline_run_stage_logs 
-            ORDER BY started_at DESC 
-            LIMIT 100
-        """)
+        
+        query = queries.GET_ALL_LOGS_BASE
+        params = []
+        
+        if start_date:
+            query += " AND started_at >= ?"
+            params.append(start_date)
+            
+        if end_date:
+            query += " AND started_at <= ?"
+            params.append(end_date)
+            
+        # Add sorting and pagination
+        offset = (page - 1) * limit
+        query += " ORDER BY started_at DESC LIMIT ? OFFSET ?"
+        params.extend([limit, offset])
+        
+        cursor.execute(query, params)
         rows = cursor.fetchall()
         conn.close()
         return [dict(row) for row in rows]
@@ -153,16 +173,35 @@ def get_logs_by_table(source_tablename: str):
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("""
-            SELECT * FROM pipeline_run_stage_logs 
-            WHERE source_tablename = ? 
-            ORDER BY started_at DESC
-        """, (source_tablename,))
+        cursor.execute(queries.GET_LOGS_BY_TABLE, (source_tablename,))
         rows = cursor.fetchall()
         conn.close()
         return [dict(row) for row in rows]
     except sqlite3.Error as e:
         raise HTTPException(status_code=500, detail=f"Database error: {e}")
+
+
+@app.get("/stats/records-loaded")
+def get_loaded_records_stats(hours: float = 24.0):
+    """Get total records loaded for each table within the last N hours"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Calculate cutoff time
+        cutoff_time = datetime.now(IST) - timedelta(hours=hours)
+        
+        cursor.execute(queries.GET_LOADED_RECORDS_STATS, (cutoff_time.isoformat(),))
+        
+        rows = cursor.fetchall()
+        conn.close()
+        
+        # Convert to dict {table_name: count}
+        return {row['source_tablename']: row['total_loaded'] for row in rows}
+    except sqlite3.Error as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/logs/stats/summary")
@@ -173,55 +212,24 @@ def get_logs_summary():
         cursor = conn.cursor()
         
         # Status distribution (for pie chart)
-        cursor.execute("""
-            SELECT status, COUNT(*) as count 
-            FROM pipeline_run_stage_logs 
-            GROUP BY status
-        """)
+        # Status distribution (for pie chart)
+        cursor.execute(queries.GET_STATUS_DISTRIBUTION)
         status_dist = [{"name": row["status"], "value": row["count"]} for row in cursor.fetchall()]
         
         # Pipeline type distribution (for pie chart)
-        cursor.execute("""
-            SELECT pipeline_type, COUNT(*) as count 
-            FROM pipeline_run_stage_logs 
-            GROUP BY pipeline_type
-        """)
+        cursor.execute(queries.GET_PIPELINE_TYPE_DISTRIBUTION)
         type_dist = [{"name": row["pipeline_type"], "value": row["count"]} for row in cursor.fetchall()]
         
         # Runs per table (for bar chart)
-        cursor.execute("""
-            SELECT source_tablename, 
-                   COUNT(*) as total_runs,
-                   SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) as success_count,
-                   SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed_count,
-                   SUM(COALESCE(rows_processed, 0)) as total_rows
-            FROM pipeline_run_stage_logs 
-            GROUP BY source_tablename
-        """)
+        cursor.execute(queries.GET_RUNS_PER_TABLE)
         runs_per_table = [dict(row) for row in cursor.fetchall()]
         
         # Recent runs by day (for bar chart - last 7 days)
-        cursor.execute("""
-            SELECT DATE(started_at) as run_date, 
-                   COUNT(*) as runs,
-                   SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) as success,
-                   SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed
-            FROM pipeline_run_stage_logs 
-            WHERE started_at >= DATE('now', '-7 days')
-            GROUP BY DATE(started_at)
-            ORDER BY run_date
-        """)
+        cursor.execute(queries.GET_DAILY_RUNS)
         daily_runs = [dict(row) for row in cursor.fetchall()]
         
         # Total stats
-        cursor.execute("""
-            SELECT 
-                COUNT(*) as total_runs,
-                SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) as total_success,
-                SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as total_failed,
-                SUM(COALESCE(rows_processed, 0)) as total_rows_processed
-            FROM pipeline_run_stage_logs
-        """)
+        cursor.execute(queries.GET_TOTAL_STATS)
         totals = dict(cursor.fetchone())
         
         conn.close()
@@ -245,11 +253,7 @@ def get_pipeline_stages():
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("""
-            SELECT * FROM pipeline_stages 
-            WHERE is_active = 1
-            ORDER BY pipeline_name, stage_order
-        """)
+        cursor.execute(queries.GET_ALL_STAGES)
         rows = cursor.fetchall()
         conn.close()
         return [dict(row) for row in rows]
@@ -263,11 +267,7 @@ def get_stages_by_pipeline(pipeline_name: str):
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("""
-            SELECT * FROM pipeline_stages 
-            WHERE pipeline_name = ? AND is_active = 1
-            ORDER BY stage_order
-        """, (pipeline_name,))
+        cursor.execute(queries.GET_STAGES_BY_PIPELINE, (pipeline_name,))
         rows = cursor.fetchall()
         conn.close()
         return [dict(row) for row in rows]
@@ -289,10 +289,7 @@ def create_stage(stage: StageCreate):
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("""
-            INSERT INTO pipeline_stages (pipeline_name, stage_order, stage_name, stage_type, driver_container)
-            VALUES (?, ?, ?, ?, ?)
-        """, (stage.pipeline_name, stage.stage_order, stage.stage_name, stage.stage_type, stage.driver_container))
+        cursor.execute(queries.CREATE_STAGE, (stage.pipeline_name, stage.stage_order, stage.stage_name, stage.stage_type, stage.driver_container))
         conn.commit()
         stage_id = cursor.lastrowid
         conn.close()
@@ -309,20 +306,12 @@ def get_pipeline_runs():
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("""
-            SELECT * FROM pipeline_runs_master 
-            ORDER BY started_at DESC 
-            LIMIT 50
-        """)
+        cursor.execute(queries.GET_ALL_RUNS_MASTER)
         runs = [dict(row) for row in cursor.fetchall()]
         
         # Get stage logs for each run
         for run in runs:
-            cursor.execute("""
-                SELECT * FROM pipeline_run_stage_logs 
-                WHERE pipeline_run_id = ?
-                ORDER BY stage_order
-            """, (run['id'],))
+            cursor.execute(queries.GET_STAGE_LOGS_BY_RUN_ID, (run['id'],))
             run['stages'] = [dict(row) for row in cursor.fetchall()]
         
         conn.close()
@@ -338,7 +327,7 @@ def get_pipeline_run(run_id: int):
         conn = get_db_connection()
         cursor = conn.cursor()
         
-        cursor.execute("SELECT * FROM pipeline_runs_master WHERE id = ?", (run_id,))
+        cursor.execute(queries.GET_RUN_MASTER_BY_ID, (run_id,))
         run = cursor.fetchone()
         if not run:
             raise HTTPException(status_code=404, detail="Pipeline run not found")
@@ -346,19 +335,11 @@ def get_pipeline_run(run_id: int):
         run_dict = dict(run)
         
         # Get stage logs
-        cursor.execute("""
-            SELECT * FROM pipeline_run_stage_logs 
-            WHERE pipeline_run_id = ?
-            ORDER BY stage_order
-        """, (run_id,))
+        cursor.execute(queries.GET_STAGE_LOGS_BY_RUN_ID, (run_id,))
         run_dict['stages'] = [dict(row) for row in cursor.fetchall()]
         
         # Get stage definitions
-        cursor.execute("""
-            SELECT * FROM pipeline_stages 
-            WHERE pipeline_name = ? AND is_active = 1
-            ORDER BY stage_order
-        """, (run_dict['pipeline_name'],))
+        cursor.execute(queries.GET_STAGES_BY_PIPELINE, (run_dict['pipeline_name'],))
         run_dict['stage_definitions'] = [dict(row) for row in cursor.fetchall()]
         
         conn.close()
@@ -373,20 +354,11 @@ def get_runs_by_table(source_tablename: str):
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("""
-            SELECT * FROM pipeline_runs_master 
-            WHERE source_tablename = ?
-            ORDER BY started_at DESC
-            LIMIT 20
-        """, (source_tablename,))
+        cursor.execute(queries.GET_RUNS_MASTER_BY_TABLE, (source_tablename,))
         runs = [dict(row) for row in cursor.fetchall()]
         
         for run in runs:
-            cursor.execute("""
-                SELECT * FROM pipeline_run_stage_logs 
-                WHERE pipeline_run_id = ?
-                ORDER BY stage_order
-            """, (run['id'],))
+            cursor.execute(queries.GET_STAGE_LOGS_BY_RUN_ID, (run['id'],))
             run['stages'] = [dict(row) for row in cursor.fetchall()]
         
         conn.close()
@@ -409,19 +381,12 @@ def execute_pipeline_stage(run_id: int, stage: Dict, source_tablename: str):
     stage_type = stage['stage_type']
     
     # Insert stage log as running
-    cursor.execute("""
-        INSERT INTO pipeline_run_stage_logs 
-        (source_tablename, pipeline_type, status, started_at, pipeline_run_id, stage_order)
-        VALUES (?, ?, 'running', ?, ?, ?)
-    """, (source_tablename, stage_type, started_at.isoformat(), run_id, stage['stage_order']))
+    cursor.execute(queries.INSERT_STAGE_LOG_RUNNING, (source_tablename, stage_type, started_at.isoformat(), run_id, stage['stage_order']))
     log_id = cursor.lastrowid
     conn.commit()
     
     # Update pipeline run current stage
-    cursor.execute("""
-        UPDATE pipeline_runs_master SET current_stage = ?, status = 'running'
-        WHERE id = ?
-    """, (stage['stage_order'], run_id))
+    cursor.execute(queries.UPDATE_RUN_MASTER_STAGE, (stage['stage_order'], run_id))
     conn.commit()
     
     try:
@@ -444,7 +409,7 @@ def execute_pipeline_stage(run_id: int, stage: Dict, source_tablename: str):
         elif stage_type == 'loader_source_to_dl':
             # Stage 2: Run the actual loader with environment variables via -e flags
             # Get config for this table to pass correct parameters
-            cursor.execute("SELECT * FROM pipeline_config WHERE source_tablename = ?", (source_tablename,))
+            cursor.execute(queries.GET_CONFIG_BY_TABLE, (source_tablename,))
             config = cursor.fetchone()
             config_dict = dict(config) if config else {}
             
@@ -531,41 +496,24 @@ def execute_pipeline_stage(run_id: int, stage: Dict, source_tablename: str):
         time_taken = str(completed_at - started_at)
         
         if success:
-            cursor.execute("""
-                UPDATE pipeline_run_stage_logs 
-                SET status = 'success', completed_at = ?, time_taken = ?, 
-                    rows_processed = ?, file_paths = ?
-                WHERE id = ?
-            """, (completed_at.isoformat(), time_taken, rows_processed, 
+            cursor.execute(queries.UPDATE_STAGE_LOG_SUCCESS, (completed_at.isoformat(), time_taken, rows_processed, 
                   ','.join(file_paths) if file_paths else None, log_id))
             conn.commit()
             conn.close()
             return True, None
         else:
-            cursor.execute("""
-                UPDATE pipeline_run_stage_logs 
-                SET status = 'failed', completed_at = ?, time_taken = ?, error_message = ?
-                WHERE id = ?
-            """, (completed_at.isoformat(), time_taken, error_msg, log_id))
+            cursor.execute(queries.UPDATE_STAGE_LOG_FAILED, (completed_at.isoformat(), time_taken, error_msg, log_id))
             conn.commit()
             conn.close()
             return False, error_msg
             
     except subprocess.TimeoutExpired:
-        cursor.execute("""
-            UPDATE pipeline_run_stage_logs 
-            SET status = 'failed', completed_at = ?, error_message = 'Stage timeout after 5 minutes'
-            WHERE id = ?
-        """, (datetime.now(IST).isoformat(), log_id))
+        cursor.execute(queries.UPDATE_STAGE_LOG_TIMEOUT, (datetime.now(IST).isoformat(), log_id))
         conn.commit()
         conn.close()
         return False, "Stage timeout"
     except Exception as e:
-        cursor.execute("""
-            UPDATE pipeline_run_stage_logs 
-            SET status = 'failed', completed_at = ?, error_message = ?
-            WHERE id = ?
-        """, (datetime.now(IST).isoformat(), str(e)[:500], log_id))
+        cursor.execute(queries.UPDATE_STAGE_LOG_ERROR, (datetime.now(IST).isoformat(), str(e)[:500], log_id))
         conn.commit()
         conn.close()
         return False, str(e)
@@ -590,11 +538,7 @@ def run_pipeline_async(run_id: int, stages: List[Dict], source_tablename: str):
     completed_at = datetime.now(IST)
     final_status = 'success' if all_success else 'failed'
     
-    cursor.execute("""
-        UPDATE pipeline_runs_master 
-        SET status = ?, completed_at = ?, error_message = ?
-        WHERE id = ?
-    """, (final_status, completed_at.isoformat(), error_message, run_id))
+    cursor.execute(queries.UPDATE_RUN_MASTER_STATUS, (final_status, completed_at.isoformat(), error_message, run_id))
     conn.commit()
     conn.close()
 
@@ -612,16 +556,12 @@ def trigger_pipeline(source_tablename: str, request: TriggerRequest, background_
         cursor = conn.cursor()
         
         # Verify table exists
-        cursor.execute("SELECT * FROM pipeline_config WHERE source_tablename = ?", (source_tablename,))
+        cursor.execute(queries.GET_CONFIG_BY_TABLE, (source_tablename,))
         if not cursor.fetchone():
             raise HTTPException(status_code=404, detail="Table not found in config")
         
         # Get pipeline stages
-        cursor.execute("""
-            SELECT * FROM pipeline_stages 
-            WHERE pipeline_name = ? AND is_active = 1
-            ORDER BY stage_order
-        """, (request.pipeline_name,))
+        cursor.execute(queries.GET_STAGES_BY_PIPELINE, (request.pipeline_name,))
         stages = [dict(row) for row in cursor.fetchall()]
         
         if not stages:
@@ -629,11 +569,7 @@ def trigger_pipeline(source_tablename: str, request: TriggerRequest, background_
         
         # Create pipeline run
         started_at = datetime.now(IST)
-        cursor.execute("""
-            INSERT INTO pipeline_runs_master 
-            (source_tablename, pipeline_name, status, total_stages, triggered_by, started_at)
-            VALUES (?, ?, 'pending', ?, ?, ?)
-        """, (source_tablename, request.pipeline_name, len(stages), request.triggered_by, started_at.isoformat()))
+        cursor.execute(queries.INSERT_RUN_MASTER_PENDING, (source_tablename, request.pipeline_name, len(stages), request.triggered_by, started_at.isoformat()))
         run_id = cursor.lastrowid
         conn.commit()
         conn.close()
