@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException
 from typing import List, Dict, Any
 import sqlite3
 import json
-import uuid
+import uuid6
 from db.connection import get_db_connection
 from schemas.models import SourceConfig
 
@@ -44,7 +44,7 @@ def create_source(source: SourceConfig):
              conn.close()
              raise HTTPException(status_code=400, detail="Source with this name already exists")
         
-        new_id = str(uuid.uuid4()) # using uuid4 as standard
+        new_id = str(uuid6.uuid7()) # using uuid7 for time-sorted IDs
         creds_json = json.dumps(source.source_creds) if source.source_creds else None
 
         query = """

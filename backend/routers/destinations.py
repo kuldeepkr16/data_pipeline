@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException
 from typing import List, Dict, Any
 import sqlite3
 import json
-import uuid
+import uuid6
 from db.connection import get_db_connection
 from schemas.models import DestinationConfig
 
@@ -44,7 +44,7 @@ def create_destination(destination: DestinationConfig):
              conn.close()
              raise HTTPException(status_code=400, detail="Destination with this name already exists")
 
-        new_id = str(uuid.uuid4())
+        new_id = str(uuid6.uuid7())
         creds_json = json.dumps(destination.destination_creds) if destination.destination_creds else None
 
         query = """
