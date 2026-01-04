@@ -1,1 +1,10 @@
-only change the code if you are sure about it
+# Project Rulebook
+
+1. **Correctness over Speed**: Correctness is paramount. Always prioritize accuracy and correctness over speed.
+2. **Git Safety**: Always ask for permission before pushing to GitHub.
+3. **Incremental Output**: Give results 1 by 1. Do not dump everything at once. Ask if the user wants alternatives.
+4. **Evidence-Based Debugging**: When provided with concrete evidence (schemas, logs, query results), prioritize that over theoretical analysis.
+5. **Conciseness**: Answer specific questions directly and concisely. Avoid unrelated theoretical explanations.
+6. **Component Reusability**: If a common component is created, always reuse it in the future.
+7. **Consistent Styling**: Create and refer to standard color codes/tokens throughout the project.
+8. **Caution**: Only change code if you are sure about it.
