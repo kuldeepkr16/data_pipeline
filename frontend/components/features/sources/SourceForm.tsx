@@ -54,6 +54,28 @@ export const SourceForm: React.FC<SourceFormProps> = ({ initialData, onSubmit, o
     const handleTestConnection = async () => {
         setTestStatus('testing');
         setTestMessage(null);
+        setError(null);
+
+        // Frontend Validation
+        const activeDefinition = getConnectorDefinition(formData.source_type || defaultType);
+        if (activeDefinition) {
+            const missingFields: string[] = [];
+            activeDefinition.fields.forEach(field => {
+                if (field.required) {
+                    const val = formData.source_creds?.[field.key];
+                    if (val === undefined || val === null || val === '') {
+                        missingFields.push(field.label);
+                    }
+                }
+            });
+
+            if (missingFields.length > 0) {
+                setTestStatus('idle'); // Reset status so they can try again immediately
+                setError(`Please fill in all required fields: ${missingFields.join(', ')}`);
+                return;
+            }
+        }
+
         try {
             const res = await fetch('http://localhost:8000/connections/test', {
                 method: 'POST',
@@ -137,7 +159,9 @@ export const SourceForm: React.FC<SourceFormProps> = ({ initialData, onSubmit, o
                             {activeDefinition.fields.map(field => (
                                 <div key={field.key}>
                                     <label className="block text-xs text-gray-500 mb-1">
-                                        {field.label} {field.required && <span className="text-red-400">*</span>}
+                                        {field.label}
+                                        {field.defaultValue && <span className="text-gray-600 font-normal ml-1">(e.g. {field.defaultValue})</span>}
+                                        {field.required && <span className="text-red-400 ml-1">*</span>}
                                     </label>
                                     {field.type === 'textarea' ? (
                                         <textarea

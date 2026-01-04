@@ -66,3 +66,57 @@ def create_destination(destination: DestinationConfig):
         return destination
     except sqlite3.Error as e:
         raise HTTPException(status_code=500, detail=f"Database error: {e}")
+
+@router.delete("/{destination_name}", status_code=204)
+def delete_destination(destination_name: str):
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute("SELECT id FROM destinations_config WHERE destination_name = ?", (destination_name,))
+        if cursor.fetchone() is None:
+            conn.close()
+            raise HTTPException(status_code=404, detail="Destination not found")
+            
+        cursor.execute("DELETE FROM destinations_config WHERE destination_name = ?", (destination_name,))
+        conn.commit()
+        conn.close()
+        return None
+    except sqlite3.Error as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+
+@router.put("/{destination_name}")
+def update_destination(destination_name: str, destination: DestinationConfig):
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Check if exists
+        cursor.execute("SELECT id FROM destinations_config WHERE destination_name = ?", (destination_name,))
+        row = cursor.fetchone()
+        if row is None:
+            conn.close()
+            raise HTTPException(status_code=404, detail="Destination not found")
+        
+        current_id = row[0]
+        
+        # Encrypt creds if present
+        creds_json = encrypt(destination.destination_creds) if destination.destination_creds else None
+        
+        query = """
+            UPDATE destinations_config 
+            SET destination_type = ?, destination_creds = ?
+            WHERE destination_name = ?
+        """
+        
+        cursor.execute(query, (
+            destination.destination_type, creds_json, destination_name
+        ))
+        
+        conn.commit()
+        conn.close()
+        
+        destination.id = current_id
+        return destination
+    except sqlite3.Error as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {e}")
