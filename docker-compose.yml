@@ -69,6 +69,8 @@ services:
     volumes:
       - ./databases/config_db/data:/data # Mount the same volume to access config.db
       - /var/run/docker.sock:/var/run/docker.sock # Mount Docker socket for triggering pipelines
+    environment:
+      - ENCRYPTION_KEY=3h13R1YpQCqKfbRaUEAYr6xs9XtGr2aHM2X_7DmlpOk=
     networks:
       - data_pipeline_net
     depends_on:
@@ -104,6 +106,7 @@ services:
       MINIO_ACCESS_KEY: minioadmin
       MINIO_SECRET_KEY: minioadmin
       MINIO_BUCKET: datalake
+      ENCRYPTION_KEY: 3h13R1YpQCqKfbRaUEAYr6xs9XtGr2aHM2X_7DmlpOk=
     volumes:
       - ./databases/config_db/data:/data
       - ./data_pipeline_resources/source_to_dl:/loaders
@@ -132,6 +135,7 @@ services:
       MINIO_ACCESS_KEY: minioadmin
       MINIO_SECRET_KEY: minioadmin
       MINIO_BUCKET: datalake
+      ENCRYPTION_KEY: 3h13R1YpQCqKfbRaUEAYr6xs9XtGr2aHM2X_7DmlpOk=
     volumes:
       - ./databases/config_db/data:/data
       - ./data_pipeline_resources/dl_to_sink:/loaders

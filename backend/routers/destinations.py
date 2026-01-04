@@ -2,9 +2,10 @@ from fastapi import APIRouter, HTTPException
 from typing import List, Dict, Any
 import sqlite3
 import json
-import uuid
+import uuid6
 from db.connection import get_db_connection
 from schemas.models import DestinationConfig
+from utils.encryption import encrypt, decrypt
 
 router = APIRouter(
     prefix="/destinations",
@@ -24,7 +25,7 @@ def get_destinations():
         for row in rows:
             data = dict(row)
             if data["destination_creds"]:
-                data["destination_creds"] = json.loads(data["destination_creds"])
+                data["destination_creds"] = decrypt(data["destination_creds"])
             dests.append(data)
             
         conn.close()
@@ -44,8 +45,8 @@ def create_destination(destination: DestinationConfig):
              conn.close()
              raise HTTPException(status_code=400, detail="Destination with this name already exists")
 
-        new_id = str(uuid.uuid4())
-        creds_json = json.dumps(destination.destination_creds) if destination.destination_creds else None
+        new_id = str(uuid6.uuid7())
+        creds_json = encrypt(destination.destination_creds) if destination.destination_creds else None
 
         query = """
             INSERT INTO destinations_config (
@@ -62,6 +63,60 @@ def create_destination(destination: DestinationConfig):
         conn.close()
         
         destination.id = new_id
+        return destination
+    except sqlite3.Error as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+
+@router.delete("/{destination_name}", status_code=204)
+def delete_destination(destination_name: str):
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute("SELECT id FROM destinations_config WHERE destination_name = ?", (destination_name,))
+        if cursor.fetchone() is None:
+            conn.close()
+            raise HTTPException(status_code=404, detail="Destination not found")
+            
+        cursor.execute("DELETE FROM destinations_config WHERE destination_name = ?", (destination_name,))
+        conn.commit()
+        conn.close()
+        return None
+    except sqlite3.Error as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+
+@router.put("/{destination_name}")
+def update_destination(destination_name: str, destination: DestinationConfig):
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Check if exists
+        cursor.execute("SELECT id FROM destinations_config WHERE destination_name = ?", (destination_name,))
+        row = cursor.fetchone()
+        if row is None:
+            conn.close()
+            raise HTTPException(status_code=404, detail="Destination not found")
+        
+        current_id = row[0]
+        
+        # Encrypt creds if present
+        creds_json = encrypt(destination.destination_creds) if destination.destination_creds else None
+        
+        query = """
+            UPDATE destinations_config 
+            SET destination_type = ?, destination_creds = ?
+            WHERE destination_name = ?
+        """
+        
+        cursor.execute(query, (
+            destination.destination_type, creds_json, destination_name
+        ))
+        
+        conn.commit()
+        conn.close()
+        
+        destination.id = current_id
         return destination
     except sqlite3.Error as e:
         raise HTTPException(status_code=500, detail=f"Database error: {e}")

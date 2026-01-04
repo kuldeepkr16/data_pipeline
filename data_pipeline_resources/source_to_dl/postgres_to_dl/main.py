@@ -34,6 +34,28 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+from cryptography.fernet import Fernet
+import json
+
+def decrypt(token: str) -> Optional[dict]:
+    """Decrypts a Fernet token string back to a dictionary."""
+    if not token:
+        return None  
+    try:
+        key = os.getenv("ENCRYPTION_KEY")
+        if not key:
+            logger.warning("No ENCRYPTION_KEY found.")
+            return None
+        f = Fernet(key.encode() if isinstance(key, str) else key)
+        # Check if legacy JSON
+        if token.strip().startswith('{') and token.strip().endswith('}'):
+             return json.loads(token)
+        json_bytes = f.decrypt(token.encode('utf-8'))
+        return json.loads(json_bytes.decode('utf-8'))
+    except Exception as e:
+        logger.error(f"Decryption failed: {e}")
+        return None
+
 # Configuration from environment variables
 SOURCE_TABLENAME = os.getenv('SOURCE_TABLENAME')
 LOAD_TYPE = os.getenv('LOAD_TYPE', 'full')

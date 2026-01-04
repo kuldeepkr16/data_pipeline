@@ -3,73 +3,21 @@
 import React, { useState, useEffect } from 'react';
 import { Header } from '../../components/layout/Header';
 import { Footer } from '../../components/layout/Footer';
-import { DestinationConfig, ConnectionCreds } from '../../types';
+import { DestinationConfig } from '../../types';
 import { Card } from '../../components/common/Card';
 import { Button } from '../../components/common/Button';
-import { Input } from '../../components/common/Input';
 import { Badge } from '../../components/common/Badge';
+import { ConnectorIcon } from '../../components/common/ConnectorIcon';
+import { Modal } from '../../components/common/Modal';
+import { DestinationForm } from '../../components/features/destinations/DestinationForm';
+import { DropdownMenu } from '../../components/common/DropdownMenu';
 
 export default function DestinationsPage() {
     const [destinations, setDestinations] = useState<DestinationConfig[]>([]);
     const [loading, setLoading] = useState(true);
-    const [isModalOpen, setIsModalOpen] = useState(false);
+    const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+    const [editingDestination, setEditingDestination] = useState<DestinationConfig | null>(null);
     const [activeTab, setActiveTab] = useState('pipelines');
-
-    const [testStatus, setTestStatus] = useState<'idle' | 'testing' | 'success' | 'failed'>('idle');
-    const [testMessage, setTestMessage] = useState<string | null>(null);
-
-    // Form State
-    const [newDestination, setNewDestination] = useState<Partial<DestinationConfig>>({
-        destination_name: '',
-        destination_type: 'postgres',
-        destination_creds: {
-            host: 'localhost',
-            port: 5432,
-            user: 'postgres',
-            password: '',
-            dbname: 'analytics'
-        }
-    });
-
-    const updateCreds = (field: keyof ConnectionCreds, value: any) => {
-        setTestStatus('idle');
-        setTestMessage(null);
-        setNewDestination(prev => ({
-            ...prev,
-            destination_creds: {
-                ...prev.destination_creds,
-                [field]: value
-            }
-        }));
-    };
-
-    const handleTestConnection = async () => {
-        setTestStatus('testing');
-        setTestMessage(null);
-        try {
-            const res = await fetch('http://localhost:8000/connections/test', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    type: newDestination.destination_type,
-                    creds: newDestination.destination_creds
-                })
-            });
-
-            if (!res.ok) {
-                const errData = await res.json();
-                throw new Error(errData.detail || 'Connection failed');
-            }
-
-            setTestStatus('success');
-            setTestMessage('Connection successful!');
-        } catch (err: any) {
-            setTestStatus('failed');
-            setTestMessage(err.message);
-        }
-    };
-
-    const [createError, setCreateError] = useState<string | null>(null);
 
     useEffect(() => {
         fetchDestinations();
@@ -88,18 +36,12 @@ export default function DestinationsPage() {
         }
     };
 
-    const handleCreateDestination = async () => {
-        setCreateError(null);
-        if (!newDestination.destination_name) {
-            setCreateError("Destination Name is required");
-            return;
-        }
-
+    const handleCreateDestination = async (data: Partial<DestinationConfig>) => {
         try {
             const res = await fetch('http://localhost:8000/destinations', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(newDestination)
+                body: JSON.stringify(data)
             });
 
             if (!res.ok) {
@@ -107,18 +49,62 @@ export default function DestinationsPage() {
                 throw new Error(errData.detail || 'Failed to create destination');
             }
 
-            // Success
-            setIsModalOpen(false);
-            setNewDestination({
-                destination_name: '',
-                destination_type: 'postgres',
-                destination_creds: { host: 'localhost', port: 5432, user: 'postgres', password: '', dbname: 'analytics' }
-            });
-            setTestStatus('idle');
-            setTestMessage(null);
+            setIsCreateModalOpen(false);
             fetchDestinations();
         } catch (err: any) {
-            setCreateError(err.message);
+            throw err;
+        }
+    };
+
+    const handleUpdateDestination = async (data: Partial<DestinationConfig>) => {
+        if (!editingDestination?.destination_name) return;
+
+        try {
+            const res = await fetch(`http://localhost:8000/destinations/${editingDestination.destination_name}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            });
+
+            if (res.status === 405 || res.status === 404) {
+                const res2 = await fetch('http://localhost:8000/destinations', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+                if (!res2.ok) {
+                    const errData = await res2.json();
+                    throw new Error(errData.detail || 'Failed to update destination');
+                }
+            } else if (!res.ok) {
+                const errData = await res.json();
+                throw new Error(errData.detail || 'Failed to update destination');
+            }
+
+            setEditingDestination(null);
+            fetchDestinations();
+        } catch (err: any) {
+            throw err;
+        }
+    };
+
+    const handleDeleteDestination = async (destinationName: string) => {
+        if (!confirm(`Are you sure you want to delete destination "${destinationName}"?`)) return;
+
+        try {
+            const res = await fetch(`http://localhost:8000/destinations/${destinationName}`, {
+                method: 'DELETE'
+            });
+
+            if (!res.ok && res.status !== 404) {
+                const errData = await res.json();
+                alert(errData.detail || 'Failed to delete destination');
+                return;
+            }
+            fetchDestinations();
+        } catch (err) {
+            console.error(err);
+            alert("Failed to delete destination");
         }
     };
 
@@ -135,7 +121,7 @@ export default function DestinationsPage() {
                         <h1 className="text-3xl font-bold text-white mb-2">Destinations</h1>
                         <p className="text-gray-400">Manage your data export targets.</p>
                     </div>
-                    <Button onClick={() => setIsModalOpen(true)} variant="primary" className="flex items-center gap-2">
+                    <Button onClick={() => setIsCreateModalOpen(true)} variant="primary" className="flex items-center gap-2">
                         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
                         Add New Destination
                     </Button>
@@ -146,31 +132,66 @@ export default function DestinationsPage() {
                         <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
                     </div>
                 ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 w-full">
+                    <div className="w-full space-y-4">
                         {destinations.map(dest => (
-                            <Card key={dest.id || dest.destination_name} className="p-6 hover:border-indigo-500/50 transition-colors">
-                                <div className="flex justify-between items-start mb-4">
-                                    <div className="p-3 bg-purple-500/10 rounded-lg">
-                                        <svg className="w-8 h-8 text-purple-400" viewBox="0 0 24 24" fill="currentColor">
-                                            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-5.5-2.5l7.51-3.22-3.22-7.51-7.51 3.22 3.22 7.51z" />
-                                        </svg>
-                                    </div>
-                                    <Badge variant='success'>
-                                        ACTIVE
-                                    </Badge>
+                            <Card key={dest.id || dest.destination_name} className="p-6 transition-colors hover:border-purple-500/50 flex flex-col md:flex-row items-center gap-6">
+                                <div className="p-4 bg-purple-500/10 rounded-xl flex-shrink-0">
+                                    <ConnectorIcon type={dest.destination_type || 'default'} className="w-8 h-8 text-purple-400" />
                                 </div>
-                                <h3 className="text-xl font-bold text-white mb-1">{dest.destination_name}</h3>
-                                <p className="text-sm text-gray-500 mb-4">{dest.destination_type?.toUpperCase()}</p>
 
-                                <div className="text-xs text-gray-400 pt-4 border-t border-white/5 space-y-1">
-                                    <div className='flex justify-between'>
-                                        <span>Host:</span>
-                                        <span className="text-gray-300">{dest.destination_creds?.host || 'N/A'}</span>
+                                {/* Content */}
+                                <div className="flex-grow grid grid-cols-1 md:grid-cols-3 gap-4 w-full">
+                                    {/* Name & Type */}
+                                    <div>
+                                        <div className="flex items-center gap-3">
+                                            <h3 className="text-xl font-bold text-white">{dest.destination_name}</h3>
+                                            <Badge variant='success'>ACTIVE</Badge>
+                                        </div>
+                                        <p className="text-sm text-gray-500 mt-1">{dest.destination_type?.toUpperCase()}</p>
                                     </div>
-                                    <div className='flex justify-between'>
-                                        <span>DB:</span>
-                                        <span className="text-gray-300">{dest.destination_creds?.dbname || 'N/A'}</span>
+
+                                    {/* Details */}
+                                    <div className="text-sm text-gray-400 space-y-1">
+                                        <div className='flex gap-2'>
+                                            <span className="text-gray-500">Host:</span>
+                                            <span className="text-gray-300">{dest.destination_creds?.host || 'N/A'}</span>
+                                        </div>
+                                        <div className='flex gap-2'>
+                                            <span className="text-gray-500">DB:</span>
+                                            <span className="text-gray-300">{dest.destination_creds?.dbname || 'N/A'}</span>
+                                        </div>
                                     </div>
+
+                                    {/* Created At */}
+                                    <div className="md:text-right text-xs text-gray-600 self-center">
+                                        Created: {dest.created_at ? new Date(dest.created_at).toLocaleDateString() : 'N/A'}
+                                    </div>
+                                </div>
+
+                                {/* Actions */}
+                                <div className="flex-shrink-0 ml-auto">
+                                    <DropdownMenu
+                                        trigger={
+                                            <button className="p-2 text-gray-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors">
+                                                <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
+                                                </svg>
+                                            </button>
+                                        }
+                                        items={[
+                                            {
+                                                label: 'Edit Configuration',
+                                                icon: <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>,
+                                                onClick: () => setEditingDestination(dest)
+                                            },
+                                            {
+                                                label: 'Delete Destination',
+                                                icon: <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>,
+                                                onClick: () => handleDeleteDestination(dest.destination_name),
+                                                variant: 'danger'
+                                            }
+                                        ]}
+                                    />
                                 </div>
                             </Card>
                         ))}
@@ -178,126 +199,33 @@ export default function DestinationsPage() {
                 )}
             </main>
 
-            {/* Add New Destination Modal */}
-            {isModalOpen && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm overflow-y-auto">
-                    <div className="bg-[#1a1c24] border border-white/10 rounded-xl max-w-md w-full p-6 shadow-2xl animate-fade-in-up my-8">
-                        <h2 className="text-xl font-bold text-white mb-6">Add New Destination</h2>
+            {/* Create Destination Modal */}
+            <Modal
+                isOpen={isCreateModalOpen}
+                onClose={() => setIsCreateModalOpen(false)}
+                title="Add New Destination"
+            >
+                <DestinationForm
+                    onSubmit={handleCreateDestination}
+                    onCancel={() => setIsCreateModalOpen(false)}
+                />
+            </Modal>
 
-                        <div className="space-y-4">
-                            <div>
-                                <label className="block text-sm font-medium text-gray-400 mb-1">Connector Type</label>
-                                <select
-                                    className="w-full bg-[#0f111a] border border-white/10 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-purple-500"
-                                    value={newDestination.destination_type}
-                                    onChange={(e) => {
-                                        setNewDestination({ ...newDestination, destination_type: e.target.value });
-                                        setTestStatus('idle');
-                                    }}
-                                >
-                                    <option value="postgres">Postgres</option>
-                                </select>
-                            </div>
-
-                            <div>
-                                <label className="block text-sm font-medium text-gray-400 mb-1">Destination Name (Identifier)</label>
-                                <Input
-                                    value={newDestination.destination_name}
-                                    onChange={(e) => setNewDestination({ ...newDestination, destination_name: e.target.value })}
-                                    placeholder="e.g., analytics_db"
-                                />
-                            </div>
-
-                            <div className="pt-4 border-t border-white/5">
-                                <h3 className="text-md font-semibold text-gray-300 mb-3">Connection Details</h3>
-
-                                <div className="space-y-3">
-                                    <div>
-                                        <label className="block text-xs text-gray-500 mb-1">Host</label>
-                                        <Input
-                                            value={newDestination.destination_creds?.host}
-                                            onChange={(e) => updateCreds('host', e.target.value)}
-                                            placeholder="localhost"
-                                        />
-                                    </div>
-                                    <div className="grid grid-cols-2 gap-4">
-                                        <div>
-                                            <label className="block text-xs text-gray-500 mb-1">Port</label>
-                                            <Input
-                                                type="number"
-                                                value={newDestination.destination_creds?.port?.toString()}
-                                                onChange={(e) => updateCreds('port', parseInt(e.target.value))}
-                                                placeholder="5432"
-                                            />
-                                        </div>
-                                        <div>
-                                            <label className="block text-xs text-gray-500 mb-1">Database Name</label>
-                                            <Input
-                                                value={newDestination.destination_creds?.dbname}
-                                                onChange={(e) => updateCreds('dbname', e.target.value)}
-                                                placeholder="analytics"
-                                            />
-                                        </div>
-                                    </div>
-                                    <div>
-                                        <label className="block text-xs text-gray-500 mb-1">User</label>
-                                        <Input
-                                            value={newDestination.destination_creds?.user}
-                                            onChange={(e) => updateCreds('user', e.target.value)}
-                                            placeholder="postgres"
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="block text-xs text-gray-500 mb-1">Password</label>
-                                        <Input
-                                            type="password"
-                                            value={newDestination.destination_creds?.password}
-                                            onChange={(e) => updateCreds('password', e.target.value)}
-                                            placeholder="••••••••"
-                                        />
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* Test Connection Status and Button */}
-                        <div className="mt-6 flex flex-col gap-2">
-                            <div className="flex justify-between items-center">
-                                <Button
-                                    onClick={handleTestConnection}
-                                    disabled={testStatus === 'testing'}
-                                    className={`w-full ${testStatus === 'success' ? 'bg-green-600 hover:bg-green-700' : 'bg-gray-700 hover:bg-gray-600'}`}
-                                >
-                                    {testStatus === 'testing' ? 'Testing...' : testStatus === 'success' ? 'Connection Verified' : 'Test Connection'}
-                                </Button>
-                            </div>
-                            {testMessage && (
-                                <div className={`text-xs p-2 rounded ${testStatus === 'success' ? 'text-green-400 bg-green-900/20' : 'text-red-400 bg-red-900/20'}`}>
-                                    {testMessage}
-                                </div>
-                            )}
-                        </div>
-
-                        {createError && (
-                            <div className="mt-4 p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 text-sm">
-                                {createError}
-                            </div>
-                        )}
-
-                        <div className="mt-8 flex justify-end gap-3 pt-4 border-t border-white/5">
-                            <Button variant="secondary" onClick={() => setIsModalOpen(false)}>Cancel</Button>
-                            <Button
-                                variant="primary"
-                                onClick={handleCreateDestination}
-                                disabled={testStatus !== 'success'} // Enforce test success
-                                title={testStatus !== 'success' ? "Please verify connection first" : ""}
-                            >
-                                Create Destination
-                            </Button>
-                        </div>
-                    </div>
-                </div>
-            )}
+            {/* Edit Destination Modal */}
+            <Modal
+                isOpen={!!editingDestination}
+                onClose={() => setEditingDestination(null)}
+                title="Edit Destination"
+            >
+                {editingDestination && (
+                    <DestinationForm
+                        initialData={editingDestination}
+                        onSubmit={handleUpdateDestination}
+                        onCancel={() => setEditingDestination(null)}
+                        isEditing={true}
+                    />
+                )}
+            </Modal>
 
             <Footer />
         </div>

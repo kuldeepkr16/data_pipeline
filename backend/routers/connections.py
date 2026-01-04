@@ -14,32 +14,82 @@ class ConnectionTestRequest(BaseModel):
 
 @router.post("/test")
 def test_connection(request: ConnectionTestRequest):
-    if request.type != 'postgres':
-        raise HTTPException(status_code=400, detail=f"Unsupported connection type: {request.type}")
-    
     creds = request.creds
-    required_fields = ['host', 'port', 'user', 'dbname']
-    # Password can be empty string, so just check existence of key if needed, or rely on connect failing
+    conn_type = request.type
     
-    missing = [f for f in required_fields if f not in creds]
-    if missing:
-        raise HTTPException(status_code=400, detail=f"Missing required fields: {', '.join(missing)}")
+    # Generic check for required fields based on type
+    # This acts as a secondary check to frontend validation
+    required_map = {
+        'postgres': ['host', 'port', 'user', 'dbname'],
+        'mysql': ['host', 'port', 'user', 'dbname'],
+        'mongodb': ['connection_string', 'dbname'],
+        'dynamodb': ['region_name', 'aws_access_key_id', 'aws_secret_access_key'],
+        'salesforce': ['username', 'password', 'security_token'],
+        'googlesheets': ['spreadsheet_link', 'service_account_json'],
+        's3': ['bucket_name', 'aws_access_key_id', 'aws_secret_access_key'],
+        'api': ['url', 'method'],
+        'webhook': [] # No strict requirements for webhook test potentially
+    }
+
+    if conn_type in required_map:
+        missing = [f for f in required_map[conn_type] if f not in creds or not str(creds[f]).strip()]
+        if missing:
+             raise HTTPException(status_code=400, detail=f"Missing required fields: {', '.join(missing)}")
 
     try:
-        # Attempt connection
-        conn = psycopg2.connect(
-            host=creds.get('host'),
-            port=creds.get('port'),
-            user=creds.get('user'),
-            password=creds.get('password'),
-            dbname=creds.get('dbname'),
-            connect_timeout=3 # 3 seconds timeout
-        )
-        conn.close()
-        return {"status": "success", "message": "Connection successful"}
+        if conn_type == 'postgres':
+            # Real connection test for Postgres
+            conn = psycopg2.connect(
+                host=creds.get('host'),
+                port=creds.get('port'),
+                user=creds.get('user'),
+                password=creds.get('password'),
+                dbname=creds.get('dbname'),
+                connect_timeout=3
+            )
+            conn.close()
+            return {"status": "success", "message": "Connection successful"}
+            
+        elif conn_type == 'googlesheets':
+            # Structural validation for Google Sheets
+            import json
+            
+            # Validate Link
+            link = creds.get('spreadsheet_link', '')
+            if not link.startswith('https://docs.google.com/spreadsheets/'):
+                raise ValueError("Invalid Spreadsheet Link. Must start with https://docs.google.com/spreadsheets/")
+                
+            # Validate JSON
+            service_account = creds.get('service_account_json', '')
+            try:
+                json_data = json.loads(service_account)
+                if json_data.get('type') != 'service_account':
+                    raise ValueError("JSON does not look like a service account key (missing 'type': 'service_account')")
+            except json.JSONDecodeError:
+                raise ValueError("Service Account JSON is not valid JSON")
+                
+            return {"status": "success", "message": "Configuration valid (Structurally verified)"}
+
+        elif conn_type == 'mongodb':
+            uri = creds.get('connection_string', '')
+            if not (uri.startswith('mongodb://') or uri.startswith('mongodb+srv://')):
+                raise ValueError("Connection string must start with mongodb:// or mongodb+srv://")
+            return {"status": "success", "message": "Configuration valid (Structurally verified)"}
+            
+        elif conn_type == 'api':
+             url = creds.get('url', '')
+             if not (url.startswith('http://') or url.startswith('https://')):
+                 raise ValueError("URL must start with http:// or https://")
+             return {"status": "success", "message": "Configuration valid (Structurally verified)"}
+
+        else:
+             # Fallback for others: satisfied by the Generic required_map check above
+             return {"status": "success", "message": f"Configuration valid for {conn_type} (Structurally verified)"}
+
     except psycopg2.Error as e:
-        # Return error detail but safe
         error_msg = str(e).strip()
         raise HTTPException(status_code=400, detail=f"Connection failed: {error_msg}")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")

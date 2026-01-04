@@ -31,7 +31,37 @@ Initialization: `databases/config_db/init.sql`
 
 ---
 
-### 2. `pipeline_stages`
+### 2. `sources_config`
+**Purpose**: Stores connection details for **Data Sources**.
+- **Primary Key**: `id` (UUID v7)
+- **usage**: Central repository for source credentials and types.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | TEXT | UUID v7 Primary Key |
+| `source_name` | TEXT | Unique identifier/slug for the source |
+| `source_type` | TEXT | 'postgres', 'mysql', 'mongo', 'salesforce', etc. |
+| `source_creds` | TEXT | JSON string containing connection details (host, user, pass, etc.) |
+| `created_at` | TIMESTAMP | Creation timestamp |
+
+---
+
+### 3. `destinations_config`
+**Purpose**: Stores connection details for **Data Destinations**.
+- **Primary Key**: `id` (UUID v7)
+- **usage**: Central repository for destination credentials and types.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | TEXT | UUID v7 Primary Key |
+| `destination_name` | TEXT | Unique identifier/slug for the destination |
+| `destination_type` | TEXT | 'postgres', 'bigquery', 'snowflake', etc. |
+| `destination_creds` | TEXT | JSON string containing connection details |
+| `created_at` | TIMESTAMP | Creation timestamp |
+
+---
+
+### 4. `pipeline_stages`
 **Purpose**: The template defining **HOW** the pipeline works.
 - **Unique Constraint**: `(pipeline_name, stage_order)`
 - **usage**: Defines the granular steps (driver check, extraction, verification, loading).
@@ -47,7 +77,9 @@ Initialization: `databases/config_db/init.sql`
 
 ---
 
-### 3. `pipeline_runs_master`
+---
+
+### 5. `pipeline_runs_master`
 **Purpose**: The **Header** record for a single execution instance.
 - **Foreign Key**: `source_tablename` -> `pipeline_config.source_tablename`
 - **usage**: Tracks the overall status of a triggered job.
@@ -67,7 +99,7 @@ Initialization: `databases/config_db/init.sql`
 
 ---
 
-### 4. `pipeline_run_stage_logs`
+### 6. `pipeline_run_stage_logs`
 **Purpose**: The **Detail/Line Items** for a run.
 - **Foreign Key**: `pipeline_run_id` -> `pipeline_runs_master.id`
 - **usage**: Tracks the result of each individual stage within a run.

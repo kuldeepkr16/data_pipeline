@@ -13,10 +13,33 @@ from minio import Minio
 from sqlalchemy import create_engine
 import io
 from datetime import datetime
+from typing import Optional
 
 # Logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
+
+from cryptography.fernet import Fernet
+import json
+
+def decrypt(token: str) -> Optional[dict]:
+    """Decrypts a Fernet token string back to a dictionary."""
+    if not token:
+        return None  
+    try:
+        key = os.getenv("ENCRYPTION_KEY")
+        if not key:
+            logger.warning("No ENCRYPTION_KEY found.")
+            return None
+        f = Fernet(key.encode() if isinstance(key, str) else key)
+        # Check if legacy JSON
+        if token.strip().startswith('{') and token.strip().endswith('}'):
+             return json.loads(token)
+        json_bytes = f.decrypt(token.encode('utf-8'))
+        return json.loads(json_bytes.decode('utf-8'))
+    except Exception as e:
+        logger.error(f"Decryption failed: {e}")
+        return None
 
 # Configs
 SOURCE_TABLE_NAME = os.getenv('SOURCE_TABLE_NAME') # Source table name in DL

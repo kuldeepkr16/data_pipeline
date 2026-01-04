@@ -5,6 +5,7 @@ import uuid6
 import subprocess
 import threading
 import time
+import os
 from datetime import datetime, timezone, timedelta
 from db.connection import get_db_connection
 from db import queries
@@ -71,6 +72,7 @@ def execute_pipeline_stage(run_id: str, stage: Dict, source_tablename: str):
                 '-e', f'LOAD_TYPE={load_type}',
                 '-e', f'INCREMENTAL_KEY={incremental_key or ""}',
                 '-e', f'LAST_INCREMENTAL_VALUE={last_inc_value or ""}',
+                '-e', f'ENCRYPTION_KEY={os.getenv("ENCRYPTION_KEY")}',
                 'driver_source_to_dl',
                 'python', '/loaders/postgres_to_dl/main.py'
             ]
@@ -120,6 +122,7 @@ def execute_pipeline_stage(run_id: str, stage: Dict, source_tablename: str):
                 'docker', 'exec',
                 '-e', f'SOURCE_TABLE_NAME={source_tablename}',
                 '-e', f'SINK_TABLENAME={source_tablename}',
+                '-e', f'ENCRYPTION_KEY={os.getenv("ENCRYPTION_KEY")}',
                 'driver_dl_to_sink',
                 'python', '/loaders/dl_to_postgres/main.py'
             ]
