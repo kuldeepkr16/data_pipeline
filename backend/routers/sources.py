@@ -6,11 +6,71 @@ import uuid6
 from db.connection import get_db_connection
 from schemas.models import SourceConfig
 from utils.encryption import encrypt, decrypt
+from db.queries import (
+    GET_SOURCE_BY_NAME, 
+    GET_ALL_SOURCES, 
+    CHECK_SOURCE_EXISTS_BY_NAME,
+    INSERT_SOURCE, 
+    DELETE_SOURCE_BY_NAME, 
+    UPDATE_SOURCE_BY_NAME,
+    GET_PUBLIC_TABLES
+)
 
 router = APIRouter(
     prefix="/sources",
     tags=["sources"]
 )
+
+@router.get("/{source_name}/tables", response_model=List[str])
+def get_source_tables(source_name: str):
+    try:
+        conn = get_db_connection()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        # Get source config
+        cursor.execute(GET_SOURCE_BY_NAME, (source_name,))
+        row = cursor.fetchone()
+        conn.close()
+        
+        if not row:
+            raise HTTPException(status_code=404, detail="Source not found")
+            
+        data = dict(row)
+        if not data["source_creds"]:
+            raise HTTPException(status_code=400, detail="Source credentials not found")
+            
+        # Decrypt creds
+        creds = decrypt(data["source_creds"])
+        
+        # Connect to source DB
+        # Note: This assumes postgres source type. 
+        # In a generic system, we'd switch based on data['source_type']
+        import psycopg2
+        
+        try:
+            source_conn = psycopg2.connect(
+                host=creds.get("host"),
+                port=creds.get("port"),
+                user=creds.get("user"),
+                password=creds.get("password"),
+                dbname=creds.get("dbname")
+            )
+            
+            source_cursor = source_conn.cursor()
+            source_cursor.execute(GET_PUBLIC_TABLES)
+            
+            tables = [r[0] for r in source_cursor.fetchall()]
+            
+            source_conn.close()
+            return tables
+            
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to connect to source database: {e}")
+            
+    except sqlite3.Error as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+
 
 @router.get("", response_model=List[SourceConfig])
 def get_sources():
@@ -18,7 +78,7 @@ def get_sources():
         conn = get_db_connection()
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM sources_config")
+        cursor.execute(GET_ALL_SOURCES)
         rows = cursor.fetchall()
         
         sources = []
@@ -40,7 +100,7 @@ def create_source(source: SourceConfig):
         cursor = conn.cursor()
         
         # Check exists
-        cursor.execute("SELECT id FROM sources_config WHERE source_name = ?", (source.source_name,))
+        cursor.execute(CHECK_SOURCE_EXISTS_BY_NAME, (source.source_name,))
         if cursor.fetchone() is not None:
              conn.close()
              raise HTTPException(status_code=400, detail="Source with this name already exists")
@@ -48,13 +108,7 @@ def create_source(source: SourceConfig):
         new_id = str(uuid6.uuid7()) # using uuid7 for time-sorted IDs
         creds_json = encrypt(source.source_creds) if source.source_creds else None
 
-        query = """
-            INSERT INTO sources_config (
-                id, source_name, source_type, source_creds
-            ) VALUES (?, ?, ?, ?)
-        """
-        
-        cursor.execute(query, (
+        cursor.execute(INSERT_SOURCE, (
             new_id, source.source_name, source.source_type, creds_json
         ))
         
@@ -72,12 +126,12 @@ def delete_source(source_name: str):
         conn = get_db_connection()
         cursor = conn.cursor()
         
-        cursor.execute("SELECT id FROM sources_config WHERE source_name = ?", (source_name,))
+        cursor.execute(CHECK_SOURCE_EXISTS_BY_NAME, (source_name,))
         if cursor.fetchone() is None:
             conn.close()
             raise HTTPException(status_code=404, detail="Source not found")
             
-        cursor.execute("DELETE FROM sources_config WHERE source_name = ?", (source_name,))
+        cursor.execute(DELETE_SOURCE_BY_NAME, (source_name,))
         conn.commit()
         conn.close()
         return None
@@ -91,7 +145,7 @@ def update_source(source_name: str, source: SourceConfig):
         cursor = conn.cursor()
         
         # Check if exists
-        cursor.execute("SELECT id FROM sources_config WHERE source_name = ?", (source_name,))
+        cursor.execute(CHECK_SOURCE_EXISTS_BY_NAME, (source_name,))
         row = cursor.fetchone()
         if row is None:
             conn.close()
@@ -102,13 +156,7 @@ def update_source(source_name: str, source: SourceConfig):
         # Encrypt creds if present
         creds_json = encrypt(source.source_creds) if source.source_creds else None
         
-        query = """
-            UPDATE sources_config 
-            SET source_type = ?, source_creds = ?
-            WHERE source_name = ?
-        """
-        
-        cursor.execute(query, (
+        cursor.execute(UPDATE_SOURCE_BY_NAME, (
             source.source_type, creds_json, source_name
         ))
         

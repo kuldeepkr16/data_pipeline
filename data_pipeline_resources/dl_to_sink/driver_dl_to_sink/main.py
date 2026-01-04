@@ -13,7 +13,25 @@ from typing import List, Dict, Any, Optional
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
+
+# Inline decryption helper (same as source driver)
+from cryptography.fernet import Fernet
+import json
+
+def decrypt(token: str) -> Optional[dict]:
+    if not token: return None
+    try:
+        key = os.getenv("ENCRYPTION_KEY")
+        if not key: return None
+        f = Fernet(key.encode() if isinstance(key, str) else key)
+        if token.strip().startswith('{') and token.strip().endswith('}'): return json.loads(token)
+        json_bytes = f.decrypt(token.encode('utf-8'))
+        return json.loads(json_bytes.decode('utf-8'))
+    except Exception as e:
+        logger.error(f"Decryption failed: {e}")
+        return None
 
 # Config
 DB_PATH = os.getenv('CONFIG_DB_PATH', '/data/config.db')
@@ -33,6 +51,7 @@ def get_sink_configs(conn: sqlite3.Connection) -> List[Dict[str, Any]]:
         SELECT 
             source_tablename, 
             sink_tablename,
+            destination_name,
             dl_to_sink_schedule, 
             dl_to_sink_last_loader_run_timestamp, 
             dl_to_sink_load_type, 
@@ -71,6 +90,7 @@ def trigger_loader(config: Dict[str, Any]) -> tuple:
     """
     source_table_name = config['source_tablename']
     sink_table_name = config['sink_tablename']
+    destination_name = config['destination_name']
     sink_type = config['sink_type']
     
     # Determine loader based on sink_type (e.g. postgres)
@@ -92,7 +112,22 @@ def trigger_loader(config: Dict[str, Any]) -> tuple:
     env['SOURCE_TABLE_NAME'] = source_table_name
     env['SINK_TABLENAME'] = sink_table_name
     env['LOAD_TYPE'] = config['dl_to_sink_load_type']
-    env['SOURCE_TYPE'] = config.get('source_type', 'postgres') # Default for safety, but DB should have it
+    env['SOURCE_TYPE'] = config.get('source_type', 'postgres')
+
+    # Fetch and pass destination credentials
+    try:
+        cursor = get_db_connection().cursor()
+        cursor.execute("SELECT destination_creds FROM destinations_config WHERE destination_name = ?", (destination_name,))
+        row = cursor.fetchone()
+        if row and row['destination_creds']:
+            creds = decrypt(row['destination_creds']) or {}
+            env['SINK_POSTGRES_HOST'] = creds.get('host', '')
+            env['SINK_POSTGRES_PORT'] = str(creds.get('port', ''))
+            env['SINK_POSTGRES_USER'] = creds.get('user', '')
+            env['SINK_POSTGRES_PASSWORD'] = creds.get('password', '')
+            env['SINK_POSTGRES_DB'] = creds.get('dbname', '')
+    except Exception as e:
+         logger.error(f"Failed to fetch destination credentials for {destination_name}: {e}")
     
     try:
         result = subprocess.run(

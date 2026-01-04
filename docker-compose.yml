@@ -97,11 +97,7 @@ services:
     container_name: driver_source_to_dl
     environment:
       CONFIG_DB_PATH: /data/config.db
-      POSTGRES_HOST: source_pg_db
-      POSTGRES_PORT: 5432
-      POSTGRES_DB: source_db
-      POSTGRES_USER: read_user
-      POSTGRES_PASSWORD: read_password
+
       MINIO_ENDPOINT: minio_server:9000
       MINIO_ACCESS_KEY: minioadmin
       MINIO_SECRET_KEY: minioadmin
@@ -126,11 +122,6 @@ services:
     container_name: driver_dl_to_sink
     environment:
       CONFIG_DB_PATH: /data/config.db
-      SINK_POSTGRES_HOST: sink_pg_db
-      SINK_POSTGRES_PORT: 5432
-      SINK_POSTGRES_DB: sink_db
-      SINK_POSTGRES_USER: postgres
-      SINK_POSTGRES_PASSWORD: postgres
       MINIO_ENDPOINT: minio_server:9000
       MINIO_ACCESS_KEY: minioadmin
       MINIO_SECRET_KEY: minioadmin

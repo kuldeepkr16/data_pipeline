@@ -12,6 +12,8 @@ export interface Config {
     dl_to_sink_last_loader_run_status?: string;
     dl_to_sink_last_loader_run_timestamp?: string;
     sink_type?: string;
+    source_name?: string;
+    destination_name?: string;
 }
 
 export interface ConfigCreate {
@@ -23,6 +25,8 @@ export interface ConfigCreate {
     source_to_dl_load_type?: string;
     dl_to_sink_schedule?: number;
     dl_to_sink_load_type?: string;
+    source_name: string;
+    destination_name: string;
 }
 
 export interface ConnectionCreds {

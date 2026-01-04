@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { Config, PipelineLog, PipelineRun, PipelineStage } from '../types';
+import { Config, PipelineLog, PipelineRun, PipelineStage, ConfigCreate } from '../types';
 import { Header } from '../components/layout/Header';
 import { Footer } from '../components/layout/Footer';
 import { StatsOverview } from '../components/features/stats/StatsOverview';
@@ -12,6 +12,8 @@ import { LogFilters } from '../components/features/logs/LogFilters';
 import { LogDetailsModal } from '../components/features/logs/LogDetailsModal';
 import { PipelineGrid } from '../components/features/pipelines/PipelineGrid';
 import { ConfigEditor } from '../components/features/pipelines/ConfigEditor';
+import { AddPipelineModal } from '../components/features/pipelines/AddPipelineModal';
+
 
 interface LogStats {
   status_distribution: { name: string; value: number }[];
@@ -171,7 +173,31 @@ export default function Home() {
     }
   }, [activeTab, pipelineRuns]);
 
+  // Pipeline Creation State
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+
   // --- Handlers ---
+
+  const handleCreateConfig = async (newConfig: ConfigCreate) => {
+    try {
+      const res = await fetch('http://localhost:8000/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newConfig),
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.detail || 'Failed to create config');
+      }
+
+      // Refresh configs
+      fetchDashboardData();
+      setNotification({ message: 'Pipeline created successfully!', type: 'success' });
+    } catch (err: any) {
+      setNotification({ message: `Error: ${err.message}`, type: 'error' });
+    }
+  };
 
   const handleSaveConfig = async (updatedConfig: Config) => {
     try {
@@ -186,6 +212,22 @@ export default function Home() {
       setNotification({ message: 'Configuration saved successfully!', type: 'success' });
     } catch (err) {
       setNotification({ message: 'Failed to save configuration.', type: 'error' });
+    }
+  };
+
+  const handleDeleteConfig = async (config: Config) => {
+    if (!confirm(`Are you sure you want to delete the pipeline for ${config.source_tablename}?`)) return;
+
+    try {
+      const res = await fetch(`http://localhost:8000/config/${config.source_tablename}`, {
+        method: 'DELETE',
+      });
+      if (!res.ok) throw new Error('Failed to delete config');
+
+      setConfigs(prev => prev.filter(c => c.source_tablename !== config.source_tablename));
+      setNotification({ message: 'Pipeline deleted successfully!', type: 'success' });
+    } catch (err) {
+      setNotification({ message: 'Failed to delete pipeline.', type: 'error' });
     }
   };
 
@@ -273,6 +315,7 @@ export default function Home() {
                     setActiveTab('configurations');
                     setEditingId(config.source_tablename);
                   }}
+                  onDelete={handleDeleteConfig}
                   selectedTimeRange={selectedTimeRange}
                   setSelectedTimeRange={setSelectedTimeRange}
                 />
@@ -311,6 +354,7 @@ export default function Home() {
                   configs={configs}
                   onSave={handleSaveConfig}
                   onEdit={(config) => { setEditingId(config.source_tablename); }}
+                  onAdd={() => setIsAddModalOpen(true)}
                   editingId={editingId}
                   setEditingId={setEditingId}
                 />
@@ -329,6 +373,12 @@ export default function Home() {
       )}
 
       <LogDetailsModal log={selectedLog} onClose={() => setSelectedLog(null)} />
+
+      <AddPipelineModal
+        isOpen={isAddModalOpen}
+        onClose={() => setIsAddModalOpen(false)}
+        onSave={handleCreateConfig}
+      />
     </div>
   );
 }

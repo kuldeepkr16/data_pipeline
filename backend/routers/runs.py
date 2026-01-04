@@ -66,6 +66,16 @@ def execute_pipeline_stage(run_id: str, stage: Dict, source_tablename: str):
             incremental_key = config_dict.get('source_to_dl_incremental_key', '')
             last_inc_value = config_dict.get('source_to_dl_last_incremental_value', '')
             
+            # Fetch source credentials
+            source_name = config_dict.get('source_name')
+            cursor.execute(queries.GET_SOURCE_BY_NAME, (source_name,))
+            source_config = cursor.fetchone()
+            
+            source_creds = {}
+            if source_config and source_config['source_creds']:
+                 from utils.encryption import decrypt
+                 source_creds = decrypt(source_config['source_creds']) or {}
+
             cmd = [
                 'docker', 'exec',
                 '-e', f'SOURCE_TABLENAME={source_tablename}',
@@ -73,6 +83,12 @@ def execute_pipeline_stage(run_id: str, stage: Dict, source_tablename: str):
                 '-e', f'INCREMENTAL_KEY={incremental_key or ""}',
                 '-e', f'LAST_INCREMENTAL_VALUE={last_inc_value or ""}',
                 '-e', f'ENCRYPTION_KEY={os.getenv("ENCRYPTION_KEY")}',
+                # Pass credentials dynamically
+                '-e', f'POSTGRES_HOST={source_creds.get("host", "")}',
+                '-e', f'POSTGRES_PORT={source_creds.get("port", "")}',
+                '-e', f'POSTGRES_USER={source_creds.get("user", "")}',
+                '-e', f'POSTGRES_PASSWORD={source_creds.get("password", "")}',
+                '-e', f'POSTGRES_DB={source_creds.get("dbname", "")}',
                 'driver_source_to_dl',
                 'python', '/loaders/postgres_to_dl/main.py'
             ]
@@ -118,11 +134,32 @@ def execute_pipeline_stage(run_id: str, stage: Dict, source_tablename: str):
                 
         elif stage_type == 'loader_dl_to_sink':
             # Stage 5: Run the DL to sink loader with environment variables via -e flags
+            
+            # Fetch destination credentials
+            cursor.execute(queries.GET_CONFIG_BY_TABLE, (source_tablename,))
+            config = cursor.fetchone()
+            config_dict = dict(config) if config else {}
+            
+            destination_name = config_dict.get('destination_name')
+            cursor.execute(queries.GET_DESTINATION_BY_NAME, (destination_name,))
+            dest_config = cursor.fetchone()
+
+            dest_creds = {}
+            if dest_config and dest_config['destination_creds']:
+                 from utils.encryption import decrypt
+                 dest_creds = decrypt(dest_config['destination_creds']) or {}
+            
             cmd = [
                 'docker', 'exec',
                 '-e', f'SOURCE_TABLE_NAME={source_tablename}',
                 '-e', f'SINK_TABLENAME={source_tablename}',
                 '-e', f'ENCRYPTION_KEY={os.getenv("ENCRYPTION_KEY")}',
+                # Pass credentials dynamically
+                '-e', f'SINK_POSTGRES_HOST={dest_creds.get("host", "")}',
+                '-e', f'SINK_POSTGRES_PORT={dest_creds.get("port", "")}',
+                '-e', f'SINK_POSTGRES_USER={dest_creds.get("user", "")}',
+                '-e', f'SINK_POSTGRES_PASSWORD={dest_creds.get("password", "")}',
+                '-e', f'SINK_POSTGRES_DB={dest_creds.get("dbname", "")}',
                 'driver_dl_to_sink',
                 'python', '/loaders/dl_to_postgres/main.py'
             ]

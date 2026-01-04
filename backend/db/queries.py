@@ -157,3 +157,52 @@ INSERT_RUN_MASTER_PENDING = """
     (id, source_tablename, pipeline_name, status, total_stages, triggered_by, started_at)
     VALUES (?, ?, ?, 'pending', ?, ?, ?)
 """
+
+# Sources Queries
+GET_SOURCE_BY_NAME = "SELECT * FROM sources_config WHERE source_name = ?"
+GET_ALL_SOURCES = "SELECT * FROM sources_config"
+CHECK_SOURCE_EXISTS_BY_NAME = "SELECT id FROM sources_config WHERE source_name = ?"
+INSERT_SOURCE = """
+    INSERT INTO sources_config (
+        id, source_name, source_type, source_creds
+    ) VALUES (?, ?, ?, ?)
+"""
+DELETE_SOURCE_BY_NAME = "DELETE FROM sources_config WHERE source_name = ?"
+UPDATE_SOURCE_BY_NAME = """
+    UPDATE sources_config 
+    SET source_type = ?, source_creds = ?
+    WHERE source_name = ?
+"""
+
+# External Database Queries
+GET_PUBLIC_TABLES = """
+    SELECT table_name 
+    FROM information_schema.tables 
+    WHERE table_schema = 'public'
+"""
+
+# Destination Queries
+GET_DESTINATION_BY_NAME = "SELECT * FROM destinations_config WHERE destination_name = ?"
+GET_ALL_DESTINATIONS = "SELECT * FROM destinations_config"
+CHECK_DESTINATION_EXISTS_BY_NAME = "SELECT id FROM destinations_config WHERE destination_name = ?"
+INSERT_DESTINATION = """
+    INSERT INTO destinations_config (
+        id, destination_name, destination_type, destination_creds
+    ) VALUES (?, ?, ?, ?)
+"""
+DELETE_DESTINATION_BY_NAME = "DELETE FROM destinations_config WHERE destination_name = ?"
+UPDATE_DESTINATION_BY_NAME = """
+    UPDATE destinations_config 
+    SET destination_type = ?, destination_creds = ?
+    WHERE destination_name = ?
+"""
+
+# Missing Pipeline Config Queries
+INSERT_PIPELINE_CONFIG = """
+    INSERT INTO pipeline_config (
+        source_tablename, sink_tablename, source_name, destination_name, source_type, sink_type,
+        source_to_dl_schedule, source_to_dl_load_type,
+        dl_to_sink_schedule, dl_to_sink_load_type
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+"""
+DELETE_PIPELINE_CONFIG = "DELETE FROM pipeline_config WHERE source_tablename = ?"

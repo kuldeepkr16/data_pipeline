@@ -10,13 +10,14 @@ interface PipelineGridProps {
     onTrigger: (table: string) => void;
     onToggleStatus: (config: Config) => void;
     onEdit: (config: Config) => void;
+    onDelete: (config: Config) => void;
     selectedTimeRange: number | null;
     setSelectedTimeRange: (range: number | null) => void;
 }
 
 export const PipelineGrid: React.FC<PipelineGridProps> = ({
     configs, pipelineRuns, loadedStats, triggeringTable,
-    onTrigger, onToggleStatus, onEdit,
+    onTrigger, onToggleStatus, onEdit, onDelete,
     selectedTimeRange, setSelectedTimeRange
 }) => {
 
@@ -98,7 +99,7 @@ export const PipelineGrid: React.FC<PipelineGridProps> = ({
             <div className="space-y-4">
                 {configs.map((config, index) => {
                     const latestRun = pipelineRuns.find(r => r.source_tablename === config.source_tablename);
-                    const isRunning = latestRun?.status === 'running';
+                    const isRunning = latestRun?.status === 'running' || latestRun?.status === 'pending';
 
                     return (
                         <div key={config.source_tablename} className="bg-gray-900/60 border border-white/10 rounded-xl overflow-hidden backdrop-blur-md hover:border-indigo-500/30 transition-all group">
@@ -218,7 +219,7 @@ export const PipelineGrid: React.FC<PipelineGridProps> = ({
                                                 Edit Config
                                             </button>
                                             <div className="h-px bg-white/5 my-1" />
-                                            <button onClick={() => alert("Not implemented")} className="w-full text-left px-4 py-2.5 text-xs font-medium text-red-400 hover:bg-red-500/10 flex items-center gap-2 transition-colors">
+                                            <button onClick={() => onDelete(config)} className="w-full text-left px-4 py-2.5 text-xs font-medium text-red-400 hover:bg-red-500/10 flex items-center gap-2 transition-colors">
                                                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                                                 Delete
                                             </button>

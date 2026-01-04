@@ -13,7 +13,29 @@ from typing import List, Dict, Any, Optional
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
+
+# Import encryption utils - Assuming shared code, but since it's a separate container, 
+# we need to be careful. The driver container likely doesn't have the backend module structure.
+# For now, we will implement simple decrypt logic or assume the utils are available if mounted.
+# Since we can't easily import from backend/utils/encryption without proper python path,
+# and given requirements.txt has cryptography, we'll inline the decryption helper safely.
+from cryptography.fernet import Fernet
+import json
+
+def decrypt(token: str) -> Optional[dict]:
+    if not token: return None
+    try:
+        key = os.getenv("ENCRYPTION_KEY")
+        if not key: return None
+        f = Fernet(key.encode() if isinstance(key, str) else key)
+        if token.strip().startswith('{') and token.strip().endswith('}'): return json.loads(token)
+        json_bytes = f.decrypt(token.encode('utf-8'))
+        return json.loads(json_bytes.decode('utf-8'))
+    except Exception as e:
+        logger.error(f"Decryption failed: {e}")
+        return None
 
 # Config
 DB_PATH = os.getenv('CONFIG_DB_PATH', '/data/config.db')
@@ -30,6 +52,7 @@ def get_active_configs(conn: sqlite3.Connection) -> List[Dict[str, Any]]:
     query = """
     SELECT 
         source_tablename, 
+        source_name,
         source_to_dl_schedule, 
         source_to_dl_load_type, 
         source_type, 
@@ -70,6 +93,7 @@ def trigger_loader(config: Dict[str, Any]) -> tuple:
     Returns: (status, new_incremental_value, error_message, rows_processed, file_path)
     """
     source_tablename = config['source_tablename']
+    source_name = config['source_name']
     source_type = config['source_type']
     load_type = config['source_to_dl_load_type']
     
@@ -99,6 +123,22 @@ def trigger_loader(config: Dict[str, Any]) -> tuple:
     
     if config['source_to_dl_last_incremental_value']:
          env['LAST_INCREMENTAL_VALUE'] = str(config['source_to_dl_last_incremental_value'])
+
+    # Fetch and pass source credentials
+    try:
+        cursor = get_db_connection().cursor()
+        cursor.execute("SELECT source_creds FROM sources_config WHERE source_name = ?", (source_name,))
+        row = cursor.fetchone()
+        if row and row['source_creds']:
+            creds = decrypt(row['source_creds']) or {}
+            env['POSTGRES_HOST'] = creds.get('host', '')
+            env['POSTGRES_PORT'] = str(creds.get('port', ''))
+            env['POSTGRES_USER'] = creds.get('user', '')
+            env['POSTGRES_PASSWORD'] = creds.get('password', '')
+            env['POSTGRES_DB'] = creds.get('dbname', '')
+    except Exception as e:
+        logger.error(f"Failed to fetch source credentials for {source_name}: {e}")
+        # Continue and hope env vars are set (or fail in loader)
 
     try:
         # Run the loader as a subprocess

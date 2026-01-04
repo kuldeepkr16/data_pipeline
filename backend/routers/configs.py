@@ -54,16 +54,10 @@ def create_config(config: ConfigCreate):
 
         # Insert new config
         # Using default active status (1) for new configs
-        query = """
-            INSERT INTO pipeline_config (
-                source_tablename, sink_tablename, source_type, sink_type,
-                source_to_dl_schedule, source_to_dl_load_type, source_to_dl_is_active,
-                dl_to_sink_schedule, dl_to_sink_load_type, dl_to_sink_is_active
-            ) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, 1)
-        """
-        
-        cursor.execute(query, (
-            config.source_tablename, config.sink_tablename, config.source_type, config.sink_type,
+        cursor.execute(queries.INSERT_PIPELINE_CONFIG, (
+            config.source_tablename, config.sink_tablename, 
+            config.source_name, config.destination_name,
+            config.source_type, config.sink_type,
             config.source_to_dl_schedule, config.source_to_dl_load_type,
             config.dl_to_sink_schedule, config.dl_to_sink_load_type
         ))
@@ -72,6 +66,25 @@ def create_config(config: ConfigCreate):
         conn.close()
         
         return {"message": "Config created successfully", "config": config}
+    except sqlite3.Error as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+
+@router.delete("/{source_tablename}", status_code=204)
+def delete_config(source_tablename: str):
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Check exists
+        cursor.execute(queries.CHECK_TABLE_EXISTS, (source_tablename,))
+        if cursor.fetchone() is None:
+            conn.close()
+            raise HTTPException(status_code=404, detail="Table config not found")
+            
+        cursor.execute(queries.DELETE_PIPELINE_CONFIG, (source_tablename,))
+        conn.commit()
+        conn.close()
+        return None
     except sqlite3.Error as e:
         raise HTTPException(status_code=500, detail=f"Database error: {e}")
 
@@ -110,6 +123,13 @@ def update_table_config(source_tablename: str, config: ConfigUpdate):
         if config.dl_to_sink_is_active is not None:
             update_fields.append("dl_to_sink_is_active = ?")
             params.append(config.dl_to_sink_is_active)
+
+        if config.source_name is not None:
+            update_fields.append("source_name = ?")
+            params.append(config.source_name)
+        if config.destination_name is not None:
+            update_fields.append("destination_name = ?")
+            params.append(config.destination_name)
 
         if not update_fields:
              conn.close()
