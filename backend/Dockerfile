@@ -10,7 +10,7 @@ RUN apt-get update && apt-get install -y \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY main.py .
+COPY . .
 
 # We expect the SQLite DB to be mounted at /data/config.db
 # This matches the path used in the code

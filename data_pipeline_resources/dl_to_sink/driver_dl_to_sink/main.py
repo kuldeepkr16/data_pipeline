@@ -4,6 +4,7 @@ import time
 import logging
 import subprocess
 import sys
+import uuid6
 from datetime import datetime, timedelta, timezone
 
 # IST timezone (UTC+5:30)
@@ -161,9 +162,9 @@ def log_pipeline_run(conn: sqlite3.Connection, source_tablename: str, pipeline_t
     
     cursor.execute("""
         INSERT INTO pipeline_run_stage_logs 
-        (source_tablename, pipeline_type, status, error_message, rows_processed, file_paths, started_at, completed_at, time_taken)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    """, (source_tablename, pipeline_type, status, error_message, rows_processed, file_paths, started_at_str, completed_at_str, time_taken))
+        (id, source_tablename, pipeline_type, status, error_message, rows_processed, file_paths, started_at, completed_at, time_taken)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (str(uuid6.uuid7()), source_tablename, pipeline_type, status, error_message, rows_processed, file_paths, started_at_str, completed_at_str, time_taken))
     conn.commit()
     logger.info(f"Logged pipeline run for {source_tablename}: {status} (time: {time_taken})")
 
