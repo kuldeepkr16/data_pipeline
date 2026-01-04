@@ -5,6 +5,7 @@ import json
 import uuid6
 from db.connection import get_db_connection
 from schemas.models import DestinationConfig
+from utils.encryption import encrypt, decrypt
 
 router = APIRouter(
     prefix="/destinations",
@@ -24,7 +25,7 @@ def get_destinations():
         for row in rows:
             data = dict(row)
             if data["destination_creds"]:
-                data["destination_creds"] = json.loads(data["destination_creds"])
+                data["destination_creds"] = decrypt(data["destination_creds"])
             dests.append(data)
             
         conn.close()
@@ -45,7 +46,7 @@ def create_destination(destination: DestinationConfig):
              raise HTTPException(status_code=400, detail="Destination with this name already exists")
 
         new_id = str(uuid6.uuid7())
-        creds_json = json.dumps(destination.destination_creds) if destination.destination_creds else None
+        creds_json = encrypt(destination.destination_creds) if destination.destination_creds else None
 
         query = """
             INSERT INTO destinations_config (

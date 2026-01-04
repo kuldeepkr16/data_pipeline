@@ -5,6 +5,7 @@ import json
 import uuid6
 from db.connection import get_db_connection
 from schemas.models import SourceConfig
+from utils.encryption import encrypt, decrypt
 
 router = APIRouter(
     prefix="/sources",
@@ -24,7 +25,7 @@ def get_sources():
         for row in rows:
             data = dict(row)
             if data["source_creds"]:
-                data["source_creds"] = json.loads(data["source_creds"])
+                data["source_creds"] = decrypt(data["source_creds"])
             sources.append(data)
             
         conn.close()
@@ -45,7 +46,7 @@ def create_source(source: SourceConfig):
              raise HTTPException(status_code=400, detail="Source with this name already exists")
         
         new_id = str(uuid6.uuid7()) # using uuid7 for time-sorted IDs
-        creds_json = json.dumps(source.source_creds) if source.source_creds else None
+        creds_json = encrypt(source.source_creds) if source.source_creds else None
 
         query = """
             INSERT INTO sources_config (
