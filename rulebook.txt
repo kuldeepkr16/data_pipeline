@@ -7,3 +7,4 @@
 5. **Conciseness**: Answer specific questions directly and concisely. Avoid unrelated theoretical explanations.
 6. **Component Reusability**: If a common component is created, always reuse it in the future.
 7. **Consistent Styling**: Create and refer to standard color codes/tokens throughout the project.
+8. **Consistent Query Management**: Do not hardcode queries within the code. Always write them in queries.py file and refer to them from there.

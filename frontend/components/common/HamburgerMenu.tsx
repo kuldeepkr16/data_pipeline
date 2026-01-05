@@ -1,15 +1,28 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import Link from 'next/link';
 
 export const HamburgerMenu: React.FC = () => {
     const [isOpen, setIsOpen] = useState(false);
+    const menuRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        function handleClickOutside(event: MouseEvent) {
+            if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+                setIsOpen(false);
+            }
+        }
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => {
+            document.removeEventListener("mousedown", handleClickOutside);
+        };
+    }, []);
 
     const toggleMenu = () => {
         setIsOpen(!isOpen);
     };
 
     return (
-        <div className="relative">
+        <div ref={menuRef} className="relative">
             {/* Hamburger Icon */}
             <button
                 onClick={toggleMenu}
@@ -56,6 +69,13 @@ export const HamburgerMenu: React.FC = () => {
 
                     {/* Navigation Links */}
                     <nav className="flex-1 overflow-y-auto py-4">
+                        <Link
+                            href="/"
+                            className="block px-6 py-4 text-[15px] font-medium text-gray-300 hover:bg-white/5 hover:text-white border-l-2 border-transparent hover:border-green-500 transition-all"
+                            onClick={() => setIsOpen(false)}
+                        >
+                            HOME
+                        </Link>
                         <Link
                             href="/sources"
                             className="block px-6 py-4 text-[15px] font-medium text-gray-300 hover:bg-white/5 hover:text-white border-l-2 border-transparent hover:border-blue-500 transition-all"

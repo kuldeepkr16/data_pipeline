@@ -8,10 +8,14 @@ class ConfigUpdate(BaseModel):
     dl_to_sink_schedule: Optional[int] = None
     dl_to_sink_load_type: Optional[str] = None
     dl_to_sink_is_active: Optional[int] = None
+    source_name: Optional[str] = None
+    destination_name: Optional[str] = None
 
 class ConfigCreate(BaseModel):
     source_tablename: str
     sink_tablename: str
+    source_name: str
+    destination_name: str
     source_type: Optional[str] = 'postgres'
     sink_type: Optional[str] = 'postgres'
     source_to_dl_schedule: int = 60
