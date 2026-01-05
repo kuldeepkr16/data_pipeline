@@ -28,12 +28,20 @@ export const SourceForm: React.FC<SourceFormProps> = ({ initialData, onSubmit, o
 
     useEffect(() => {
         if (initialData) {
+            // If any field is masked (********), clear it so user is forced to re-enter
+            const cleanedCreds = { ...initialData.source_creds };
+            Object.keys(cleanedCreds).forEach(key => {
+                if (cleanedCreds[key] === '********') {
+                    cleanedCreds[key] = '';
+                }
+            });
+
             setFormData(prev => ({
                 ...prev,
                 ...initialData,
                 source_creds: {
                     ...prev.source_creds,
-                    ...initialData.source_creds
+                    ...cleanedCreds
                 }
             }));
         }

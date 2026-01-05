@@ -25,7 +25,7 @@ export default function DestinationsPage() {
 
     const fetchDestinations = async () => {
         try {
-            const res = await fetch('http://localhost:8000/destinations');
+            const res = await fetch('http://localhost:8000/destinations/summary');
             if (res.ok) {
                 setDestinations(await res.json());
             }
@@ -85,6 +85,18 @@ export default function DestinationsPage() {
             fetchDestinations();
         } catch (err: any) {
             throw err;
+        }
+    };
+
+    const handleEditClick = async (destId: string) => {
+        try {
+            const res = await fetch(`http://localhost:8000/destinations/${destId}`);
+            if (!res.ok) throw new Error('Failed to fetch destination details');
+            const data = await res.json();
+            setEditingDestination(data);
+        } catch (e) {
+            console.error(e);
+            alert("Failed to load destination details");
         }
     };
 
@@ -182,7 +194,7 @@ export default function DestinationsPage() {
                                             {
                                                 label: 'Edit Configuration',
                                                 icon: <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>,
-                                                onClick: () => setEditingDestination(dest)
+                                                onClick: () => handleEditClick(dest.id!)
                                             },
                                             {
                                                 label: 'Delete Destination',

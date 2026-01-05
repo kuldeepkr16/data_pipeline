@@ -57,3 +57,20 @@ def decrypt(token: str) -> Optional[Dict[str, Any]]:
         print(f"Decryption failed: {e}")
         # Return raw or empty? If we can't decrypt, we can't use the creds.
         return None
+
+def mask_credentials(creds: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Returns a copy of credentials with sensitive fields replaced by '********'.
+    """
+    if not creds:
+        return {}
+    
+    masked = creds.copy()
+    sensitive_keys = ['password', 'secret', 'token', 'key', 'auth_header', 'aws_access_key_id', 'aws_secret_access_key']
+    
+    for k in masked:
+        # Check specific list OR common patterns
+        if k in sensitive_keys or 'password' in k or 'secret' in k:
+            masked[k] = '********'
+            
+    return masked

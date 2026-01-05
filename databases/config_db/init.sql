@@ -100,18 +100,4 @@ INSERT OR IGNORE INTO pipeline_stages (pipeline_name, stage_order, stage_name, s
 ('default', 4, 'Driver: DL to Sink', 'driver_dl_to_sink', 'driver_dl_to_sink'),
 ('default', 5, 'Loader: DL to Sink', 'loader_dl_to_sink', 'driver_dl_to_sink');
 
--- Insert dummy sources and destinations (Plain JSON for dev)
-INSERT OR IGNORE INTO sources_config (id, source_name, source_type, source_creds) VALUES 
-('src-1', 'source_pg', 'postgres', '{"host": "source_pg_db", "port": 5432, "user": "postgres", "password": "postgres", "dbname": "source_db"}');
 
-INSERT OR IGNORE INTO destinations_config (id, destination_name, destination_type, destination_creds) VALUES
-('dest-1', 'destination_pg', 'postgres', '{"host": "sink_pg_db", "port": 5432, "user": "postgres", "password": "postgres", "dbname": "sink_db"}');
-
--- Insert dummy data
-INSERT OR IGNORE INTO pipeline_config (
-    source_tablename, sink_tablename, source_name, destination_name,
-    source_to_dl_schedule, source_to_dl_load_type, source_to_dl_is_active, source_type, source_to_dl_incremental_key,
-    dl_to_sink_schedule, dl_to_sink_load_type, dl_to_sink_is_active, sink_type
-) VALUES
-('customers', 'customers', 'source_pg', 'destination_pg', 60, 'full', 1, 'postgres', NULL, 60, 'full', 1, 'postgres'),
-('orders', 'orders', 'source_pg', 'destination_pg', 30, 'incremental', 1, 'postgres', 'order_date', 30, 'incremental', 1, 'postgres');
