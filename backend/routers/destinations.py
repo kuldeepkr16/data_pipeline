@@ -5,9 +5,11 @@ import json
 import uuid6
 from db.connection import get_db_connection
 from schemas.models import DestinationConfig
-from utils.encryption import encrypt, decrypt
+from schemas.models import DestinationConfig
+from utils.encryption import encrypt, decrypt, mask_credentials
 from db.queries import (
     GET_ALL_DESTINATIONS,
+    GET_DESTINATION_BY_ID,
     CHECK_DESTINATION_EXISTS_BY_NAME,
     INSERT_DESTINATION,
     DELETE_DESTINATION_BY_NAME,
@@ -33,6 +35,7 @@ def get_destinations():
             data = dict(row)
             if data["destination_creds"]:
                 data["destination_creds"] = decrypt(data["destination_creds"])
+                data["destination_creds"] = mask_credentials(data["destination_creds"])
             dests.append(data)
             
         conn.close()

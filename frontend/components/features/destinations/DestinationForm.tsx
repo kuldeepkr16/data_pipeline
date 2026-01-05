@@ -28,12 +28,20 @@ export const DestinationForm: React.FC<DestinationFormProps> = ({ initialData, o
 
     useEffect(() => {
         if (initialData) {
+            // If any field is masked (********), clear it so user is forced to re-enter
+            const cleanedCreds = { ...initialData.destination_creds };
+            Object.keys(cleanedCreds).forEach(key => {
+                if (cleanedCreds[key] === '********') {
+                    cleanedCreds[key] = '';
+                }
+            });
+
             setFormData(prev => ({
                 ...prev,
                 ...initialData,
                 destination_creds: {
                     ...prev.destination_creds,
-                    ...initialData.destination_creds
+                    ...cleanedCreds
                 }
             }));
         }

@@ -25,7 +25,7 @@ export default function SourcesPage() {
 
     const fetchSources = async () => {
         try {
-            const res = await fetch('http://localhost:8000/sources');
+            const res = await fetch('http://localhost:8000/sources/summary');
             if (res.ok) {
                 setSources(await res.json());
             }
@@ -100,6 +100,18 @@ export default function SourcesPage() {
             fetchSources();
         } catch (err: any) {
             throw err;
+        }
+    };
+
+    const handleEditClick = async (sourceId: string) => {
+        try {
+            const res = await fetch(`http://localhost:8000/sources/${sourceId}`);
+            if (!res.ok) throw new Error('Failed to fetch source details');
+            const data = await res.json();
+            setEditingSource(data);
+        } catch (e) {
+            console.error(e);
+            alert("Failed to load source details");
         }
     };
 
@@ -200,7 +212,7 @@ export default function SourcesPage() {
                                             {
                                                 label: 'Edit Configuration',
                                                 icon: <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>,
-                                                onClick: () => setEditingSource(source)
+                                                onClick: () => handleEditClick(source.id!)
                                             },
                                             {
                                                 label: 'Delete Source',

@@ -160,6 +160,7 @@ INSERT_RUN_MASTER_PENDING = """
 
 # Sources Queries
 GET_SOURCE_BY_NAME = "SELECT * FROM sources_config WHERE source_name = ?"
+GET_SOURCE_BY_ID = "SELECT * FROM sources_config WHERE id = ?"
 GET_ALL_SOURCES = "SELECT * FROM sources_config"
 CHECK_SOURCE_EXISTS_BY_NAME = "SELECT id FROM sources_config WHERE source_name = ?"
 INSERT_SOURCE = """
@@ -183,6 +184,7 @@ GET_PUBLIC_TABLES = """
 
 # Destination Queries
 GET_DESTINATION_BY_NAME = "SELECT * FROM destinations_config WHERE destination_name = ?"
+GET_DESTINATION_BY_ID = "SELECT * FROM destinations_config WHERE id = ?"
 GET_ALL_DESTINATIONS = "SELECT * FROM destinations_config"
 CHECK_DESTINATION_EXISTS_BY_NAME = "SELECT id FROM destinations_config WHERE destination_name = ?"
 INSERT_DESTINATION = """

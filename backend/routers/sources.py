@@ -5,9 +5,11 @@ import json
 import uuid6
 from db.connection import get_db_connection
 from schemas.models import SourceConfig
-from utils.encryption import encrypt, decrypt
+from schemas.models import SourceConfig
+from utils.encryption import encrypt, decrypt, mask_credentials
 from db.queries import (
-    GET_SOURCE_BY_NAME, 
+    GET_SOURCE_BY_NAME,
+    GET_SOURCE_BY_ID,
     GET_ALL_SOURCES, 
     CHECK_SOURCE_EXISTS_BY_NAME,
     INSERT_SOURCE, 
@@ -71,6 +73,73 @@ def get_source_tables(source_name: str):
     except sqlite3.Error as e:
         raise HTTPException(status_code=500, detail=f"Database error: {e}")
 
+@router.get("/summary")
+def get_sources_summary():
+    """
+    Returns a lightweight list of sources with masked/minimal credentials.
+    Suitable for listing pages.
+    """
+    try:
+        conn = get_db_connection()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute(GET_ALL_SOURCES)
+        rows = cursor.fetchall()
+        
+        sources = []
+        safe_keys = ['host', 'port', 'dbname', 'user', 'region_name', 'bucket_name', 'url', 'spreadsheet_link', 'username']
+
+        for row in rows:
+            data = dict(row)
+            if data["source_creds"]:
+                try:
+                    full_creds = decrypt(data["source_creds"])
+                    # Filter only safe keys
+                    safe_creds = {k: v for k, v in full_creds.items() if k in safe_keys} if full_creds else {}
+                    data["source_creds"] = safe_creds
+                except:
+                    data["source_creds"] = {} # Fail safe
+            else:
+                 data["source_creds"] = {}
+                 
+            sources.append(data)
+            
+        conn.close()
+        return sources
+    except sqlite3.Error as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+
+
+@router.get("/{source_id}", response_model=SourceConfig)
+def get_source_by_id(source_id: str):
+    """
+    Fetch full source details by ID.
+    Credentials are masked (********) but present.
+    """
+    try:
+        conn = get_db_connection()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        cursor.execute(GET_SOURCE_BY_ID, (source_id,))
+        row = cursor.fetchone()
+        conn.close()
+        
+        if not row:
+             # Fallback check: maybe it's a name? (Legacy support if needed, but risky with UUIDs)
+             # But router order matters. If we strictly assume UUID, we fail.
+             raise HTTPException(status_code=404, detail="Source not found")
+            
+        data = dict(row)
+        if data["source_creds"]:
+            data["source_creds"] = decrypt(data["source_creds"])
+            data["source_creds"] = mask_credentials(data["source_creds"])
+            
+        return data
+    except sqlite3.Error as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+
+
 
 @router.get("", response_model=List[SourceConfig])
 def get_sources():
@@ -86,6 +155,7 @@ def get_sources():
             data = dict(row)
             if data["source_creds"]:
                 data["source_creds"] = decrypt(data["source_creds"])
+                data["source_creds"] = mask_credentials(data["source_creds"])
             sources.append(data)
             
         conn.close()
