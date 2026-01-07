@@ -47,7 +47,7 @@ def execute_pipeline_stage(run_id: str, stage: Dict, source_tablename: str):
         if stage_type == 'driver_source_to_dl':
             # Stage 1: Driver check for source to DL - just verify container is running
             result = subprocess.run(
-                ['docker', 'exec', 'driver_source_to_dl', 'echo', 'Driver ready'],
+                ['docker', 'exec', 'pipeline_worker', 'echo', 'Driver ready'],
                 capture_output=True, text=True, timeout=60
             )
             success = result.returncode == 0
@@ -89,7 +89,7 @@ def execute_pipeline_stage(run_id: str, stage: Dict, source_tablename: str):
                 '-e', f'POSTGRES_USER={source_creds.get("user", "")}',
                 '-e', f'POSTGRES_PASSWORD={source_creds.get("password", "")}',
                 '-e', f'POSTGRES_DB={source_creds.get("dbname", "")}',
-                'driver_source_to_dl',
+                'pipeline_worker',
                 'python', '/loaders/postgres_to_dl/main.py'
             ]
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
@@ -124,7 +124,7 @@ def execute_pipeline_stage(run_id: str, stage: Dict, source_tablename: str):
         elif stage_type == 'driver_dl_to_sink':
             # Stage 4: Driver check for DL to sink - verify container is running
             result = subprocess.run(
-                ['docker', 'exec', 'driver_dl_to_sink', 'echo', 'Driver ready'],
+                ['docker', 'exec', 'pipeline_worker', 'echo', 'Driver ready'],
                 capture_output=True, text=True, timeout=60
             )
             success = result.returncode == 0
@@ -149,10 +149,12 @@ def execute_pipeline_stage(run_id: str, stage: Dict, source_tablename: str):
                  from utils.encryption import decrypt
                  dest_creds = decrypt(dest_config['destination_creds']) or {}
             
+            sink_tablename = config_dict.get('sink_tablename', source_tablename)
+            
             cmd = [
                 'docker', 'exec',
                 '-e', f'SOURCE_TABLE_NAME={source_tablename}',
-                '-e', f'SINK_TABLENAME={source_tablename}',
+                '-e', f'SINK_TABLENAME={sink_tablename}',
                 '-e', f'ENCRYPTION_KEY={os.getenv("ENCRYPTION_KEY")}',
                 # Pass credentials dynamically
                 '-e', f'SINK_POSTGRES_HOST={dest_creds.get("host", "")}',
@@ -160,7 +162,7 @@ def execute_pipeline_stage(run_id: str, stage: Dict, source_tablename: str):
                 '-e', f'SINK_POSTGRES_USER={dest_creds.get("user", "")}',
                 '-e', f'SINK_POSTGRES_PASSWORD={dest_creds.get("password", "")}',
                 '-e', f'SINK_POSTGRES_DB={dest_creds.get("dbname", "")}',
-                'driver_dl_to_sink',
+                'pipeline_worker',
                 'python', '/loaders/dl_to_postgres/main.py'
             ]
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
@@ -280,20 +282,66 @@ def get_pipeline_run(run_id: str):
 
 
 @router.get("/runs/table/{source_tablename}")
-def get_runs_by_table(source_tablename: str):
-    """Get pipeline runs for a specific table"""
+def get_runs_by_table(
+    source_tablename: str,
+    page: int = 1,
+    limit: int = 5,
+    start_date: str = None,
+    end_date: str = None
+):
+    """Get pipeline runs for a specific table with pagination and date filtering"""
     try:
         conn = get_db_connection()
+        conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
-        cursor.execute(queries.GET_RUNS_MASTER_BY_TABLE, (source_tablename,))
+
+        # Base query construction
+        base_query = "FROM pipeline_runs_master WHERE source_tablename = ?"
+        params = [source_tablename]
+
+        # Add optional date filters
+        if start_date:
+            base_query += " AND started_at >= ?"
+            params.append(start_date)
+        
+        if end_date:
+            # Add one day to end_date to make it inclusive if it's just a date 'YYYY-MM-DD'
+            # Or ensure the frontend passes ISO strings. Assuming simple date string YYYY-MM-DD for now:
+            if len(end_date) == 10:  # YYYY-MM-DD
+                 base_query += " AND date(started_at) <= ?"
+            else:
+                 base_query += " AND started_at <= ?"
+            params.append(end_date)
+
+        # Count total records for pagination
+        count_query = f"SELECT COUNT(*) as total {base_query}"
+        cursor.execute(count_query, params)
+        total_count = cursor.fetchone()['total']
+
+        # Fetch paginated records
+        offset = (page - 1) * limit
+        data_query = f"SELECT * {base_query} ORDER BY started_at DESC LIMIT ? OFFSET ?"
+        params.extend([limit, offset])
+        
+        cursor.execute(data_query, params)
         runs = [dict(row) for row in cursor.fetchall()]
         
+        # Hydrate stage logs
         for run in runs:
             cursor.execute(queries.GET_STAGE_LOGS_BY_RUN_ID, (run['id'],))
             run['stages'] = [dict(row) for row in cursor.fetchall()]
         
         conn.close()
-        return runs
+        
+        return {
+            "data": runs,
+            "pagination": {
+                "page": page,
+                "limit": limit,
+                "total": total_count,
+                "total_pages": (total_count + limit - 1) // limit
+            }
+        }
     except sqlite3.Error as e:
         raise HTTPException(status_code=500, detail=f"Database error: {e}")
 

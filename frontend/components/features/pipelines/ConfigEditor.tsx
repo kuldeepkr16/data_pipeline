@@ -40,14 +40,7 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({
 
     return (
         <div className="space-y-6">
-            <div className="flex justify-end">
-                <Button onClick={onAdd} className="flex items-center space-x-2">
-                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                    </svg>
-                    <span>Create New Pipeline</span>
-                </Button>
-            </div>
+
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {configs.map((config) => (

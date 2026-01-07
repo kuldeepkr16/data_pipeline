@@ -10,26 +10,9 @@ interface HeaderProps {
     setActiveTab: (tab: TabType) => void;
 }
 
-export const Header: React.FC<HeaderProps> = ({ activeTab, setActiveTab }) => {
+export const Header: React.FC = () => {
     const pathname = usePathname();
     const router = useRouter();
-
-    const handleTabClick = (tab: TabType) => {
-        if (pathname === '/') {
-            setActiveTab(tab);
-        } else {
-            // Navigate to home with tab param
-            router.push(`/?tab=${tab}`);
-        }
-    };
-
-    const handleLogoClick = () => {
-        if (pathname === '/') {
-            setActiveTab('pipelines');
-        } else {
-            router.push('/?tab=pipelines');
-        }
-    };
 
     return (
         <header className="w-full border-b border-white/5 bg-[#0f111a]/80 backdrop-blur-xl sticky top-0 z-50 transition-all duration-300 mb-8">
@@ -38,7 +21,7 @@ export const Header: React.FC<HeaderProps> = ({ activeTab, setActiveTab }) => {
                     <HamburgerMenu />
                     <div
                         className="flex items-center space-x-4 cursor-pointer"
-                        onClick={handleLogoClick}
+                        onClick={() => router.push('/pipelines')}
                     >
                         <div className="relative group">
                             <div className="absolute -inset-1 bg-gradient-to-r from-indigo-500 to-purple-600 rounded-lg blur opacity-25 group-hover:opacity-60 transition duration-1000 group-hover:duration-200"></div>
@@ -50,18 +33,25 @@ export const Header: React.FC<HeaderProps> = ({ activeTab, setActiveTab }) => {
                     </div>
                 </div>
                 <nav className="hidden md:flex space-x-1">
-                    {(['pipelines', 'dashboard', 'logs', 'configurations'] as const).map((tab) => (
-                        <button
-                            key={tab}
-                            onClick={() => handleTabClick(tab)}
-                            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${activeTab === tab && pathname === '/'
-                                ? 'bg-white/10 text-white shadow-inner'
-                                : 'text-gray-400 hover:text-white hover:bg-white/5'
-                                }`}
-                        >
-                            {tab.charAt(0).toUpperCase() + tab.slice(1)}
-                        </button>
-                    ))}
+                    {[
+                        { name: 'Pipelines', href: '/pipelines' },
+                        { name: 'Dashboard', href: '/dashboard' },
+                        { name: 'Logs', href: '/logs' }
+                    ].map((tab) => {
+                        const isActive = pathname === tab.href || (tab.href === '/pipelines' && pathname === '/');
+                        return (
+                            <button
+                                key={tab.name}
+                                onClick={() => router.push(tab.href)}
+                                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${isActive
+                                    ? 'bg-white/10 text-white shadow-inner'
+                                    : 'text-gray-400 hover:text-white hover:bg-white/5'
+                                    }`}
+                            >
+                                {tab.name}
+                            </button>
+                        );
+                    })}
                 </nav>
             </div>
         </header>

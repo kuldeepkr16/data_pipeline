@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from routers import configs, logs, stats, runs, stages, sources, destinations, connections
+from routers import pipelines, logs, stats, runs, stages, sources, destinations, connections
 
 app = FastAPI()
 
@@ -14,7 +14,7 @@ app.add_middleware(
 )
 
 # Include Routers
-app.include_router(configs.router)
+app.include_router(pipelines.router)
 app.include_router(logs.router)
 app.include_router(stats.router)
 app.include_router(stages.router)
