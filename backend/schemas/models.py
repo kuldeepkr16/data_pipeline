@@ -1,15 +1,18 @@
 from pydantic import BaseModel, Field
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 
 class ConfigUpdate(BaseModel):
     source_to_dl_schedule: Optional[int] = None
     source_to_dl_load_type: Optional[str] = None
     source_to_dl_is_active: Optional[int] = None
+    source_to_dl_incremental_key: Optional[str] = None
     dl_to_sink_schedule: Optional[int] = None
     dl_to_sink_load_type: Optional[str] = None
     dl_to_sink_is_active: Optional[int] = None
+    dl_to_sink_incremental_key: Optional[str] = None
     source_name: Optional[str] = None
     destination_name: Optional[str] = None
+    sink_tablename: Optional[str] = None
 
 class ConfigCreate(BaseModel):
     source_tablename: str
@@ -48,3 +51,14 @@ class StageCreate(BaseModel):
 class TriggerRequest(BaseModel):
     pipeline_name: str = "default"
     triggered_by: str = "manual"
+
+class SchemaColumn(BaseModel):
+    name: str
+    type: str
+
+class SchemaInfo(BaseModel):
+    source_tablename: str
+    destination_tablename: Optional[str] = None
+    source_schema: Optional[List[SchemaColumn]] = None
+    destination_schema: Optional[List[SchemaColumn]] = None
+    last_updated: Optional[str] = None

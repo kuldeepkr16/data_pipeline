@@ -1,14 +1,17 @@
 export interface Config {
     source_tablename: string;
+    sink_tablename?: string; // Made optional to be safe, though DB has it
     source_to_dl_schedule: number;
     source_to_dl_load_type: string;
     source_to_dl_is_active: number;
+    source_to_dl_incremental_key?: string;
     source_to_dl_last_loader_run_status?: string;
     source_to_dl_last_loader_run_timestamp?: string;
     source_type?: string;
     dl_to_sink_schedule?: number;
     dl_to_sink_load_type?: string;
     dl_to_sink_is_active?: number;
+    dl_to_sink_incremental_key?: string;
     dl_to_sink_last_loader_run_status?: string;
     dl_to_sink_last_loader_run_timestamp?: string;
     sink_type?: string;
@@ -91,4 +94,16 @@ export interface PipelineRun {
     error_message: string | null;
     stages?: PipelineLog[];
     stage_definitions?: PipelineStage[];
+}
+
+export interface SchemaColumn {
+    name: string;
+    type: string;
+}
+
+export interface SchemaInfo {
+    source_tablename: string;
+    source_schema: SchemaColumn[] | null;
+    destination_schema: SchemaColumn[] | null;
+    last_updated: string | null;
 }

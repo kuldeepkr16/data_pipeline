@@ -54,3 +54,8 @@ To inspect the config database locally:
 ```bash
 sqlite3 databases/config_db/data/config.db "SELECT * FROM table_config;"
 ```
+
+```bash
+sqlite3 databases/config_db/data/config.db "SELECT * FROM destinations_config;"
+```
+

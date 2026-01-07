@@ -89,9 +89,15 @@ CREATE_STAGE = """
 
 # Runs Queries
 GET_ALL_RUNS_MASTER = """
-    SELECT * FROM pipeline_runs_master 
-    ORDER BY started_at DESC 
-    LIMIT 50
+    SELECT m.* 
+    FROM pipeline_runs_master m
+    JOIN (
+        SELECT source_tablename, MAX(started_at) as max_started_at
+        FROM pipeline_runs_master
+        GROUP BY source_tablename
+    ) latest ON m.source_tablename = latest.source_tablename 
+    AND m.started_at = latest.max_started_at
+    ORDER BY m.started_at DESC
 """
 
 GET_STAGE_LOGS_BY_RUN_ID = """

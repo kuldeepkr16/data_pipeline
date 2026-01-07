@@ -29,6 +29,8 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: sink_db
+    volumes:
+      - ./databases/sink_pg_db/data:/var/lib/postgresql/data
     networks:
       - data_pipeline_net
 
@@ -67,10 +69,15 @@ services:
     ports:
       - "8000:8000"
     volumes:
+      - ./backend:/app # Mount source code for dev
       - ./databases/config_db/data:/data # Mount the same volume to access config.db
       - /var/run/docker.sock:/var/run/docker.sock # Mount Docker socket for triggering pipelines
     environment:
       - ENCRYPTION_KEY=3h13R1YpQCqKfbRaUEAYr6xs9XtGr2aHM2X_7DmlpOk=
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=minioadmin
+      - MINIO_SECRET_KEY=minioadmin
+      - MINIO_BUCKET=datalake
     networks:
       - data_pipeline_net
     depends_on:
@@ -90,53 +97,28 @@ services:
       - ./frontend:/app
       - /app/node_modules
 
-  # Driver Script for Source to Data Lake
-  driver_source_to_dl:
+  # Pipeline Worker (Executes Data Transfers)
+  pipeline_worker:
     build:
-      context: ./data_pipeline_resources/source_to_dl/driver_source_to_dl
-    container_name: driver_source_to_dl
+      context: ./data_pipeline_resources/pipeline_worker
+    container_name: pipeline_worker
     environment:
       CONFIG_DB_PATH: /data/config.db
-
-      MINIO_ENDPOINT: minio_server:9000
+      MINIO_ENDPOINT: minio:9000
       MINIO_ACCESS_KEY: minioadmin
       MINIO_SECRET_KEY: minioadmin
       MINIO_BUCKET: datalake
       ENCRYPTION_KEY: 3h13R1YpQCqKfbRaUEAYr6xs9XtGr2aHM2X_7DmlpOk=
     volumes:
       - ./databases/config_db/data:/data
-      - ./data_pipeline_resources/source_to_dl:/loaders
+      - ./data_pipeline_resources/pipeline_worker/loaders:/loaders
     networks:
       - data_pipeline_net
     depends_on:
       - config_db
       - source_pg_db
-      - minio
-    # This service doesn't run continuously, it's executed on demand
-    command: tail -f /dev/null
-
-  # Driver Script for Data Lake to Sink
-  driver_dl_to_sink:
-    build:
-      context: ./data_pipeline_resources/dl_to_sink/driver_dl_to_sink
-    container_name: driver_dl_to_sink
-    environment:
-      CONFIG_DB_PATH: /data/config.db
-      MINIO_ENDPOINT: minio_server:9000
-      MINIO_ACCESS_KEY: minioadmin
-      MINIO_SECRET_KEY: minioadmin
-      MINIO_BUCKET: datalake
-      ENCRYPTION_KEY: 3h13R1YpQCqKfbRaUEAYr6xs9XtGr2aHM2X_7DmlpOk=
-    volumes:
-      - ./databases/config_db/data:/data
-      - ./data_pipeline_resources/dl_to_sink:/loaders
-    networks:
-      - data_pipeline_net
-    depends_on:
-      - config_db
       - sink_pg_db
       - minio
-    # This service doesn't run continuously, it's executed on demand
     command: tail -f /dev/null
 
 networks:
